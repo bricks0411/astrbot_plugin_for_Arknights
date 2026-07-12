@@ -1,8 +1,13 @@
 # GetDoctorInfo/DoctorInfoHandler.py
-import requests
 import asyncio
 
 from .models import RequestResultOfDoctorInfo
+from ..network.HttpClient import HttpClient
+from ..network.exceptions import (
+    HttpClientError,
+    InvalidResponseError,
+    RequestTimeoutError
+)
 
 class OfficialDoctorInfoHandler:
 
@@ -11,8 +16,9 @@ class OfficialDoctorInfoHandler:
     REQUEST_TIMEOUT = 10
     USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36"
 
-    def __init__(self):
+    def __init__(self, http_client: HttpClient):
         """初始化类方法"""
+        self.http_client = http_client
 
     def _get_doctor_info(
         self,
@@ -28,21 +34,15 @@ class OfficialDoctorInfoHandler:
                 message = "用户 token 与手机号码均不能为空"
             )
 
-        headers = {
-            "User-Agent": self.USER_AGENT
-        }
-
         try:
-            response = requests.get (
+            result = self.http_client.request_json(
+                "GET",
                 self.BASE_REQUEST_URL,
                 params={
                     "token": token,
                     "appCode": self.APP_CODE,
                 },
-                timeout=self.REQUEST_TIMEOUT,
-                headers=headers
             )
-            result = response.json()
 
             status = result.get("status")
             message = result.get("msg")
@@ -99,14 +99,14 @@ class OfficialDoctorInfoHandler:
                     message = message
                 )
 
-        except requests.exceptions.Timeout:
+        except RequestTimeoutError as exc:
             return RequestResultOfDoctorInfo (
                 status  = False,
                 phone   = phone,
                 token   = token,
                 message = "服务器没有在 10000ms 内返回数据，请求超时"
             )
-        except ValueError:
+        except InvalidResponseError as exc:
             return RequestResultOfDoctorInfo (
                 status  = False,
                 phone   = phone,
@@ -120,7 +120,7 @@ class OfficialDoctorInfoHandler:
                 token   = token,
                 message = "返回数据缺少必要字段"
             )
-        except requests.exceptions.RequestException as exc:
+        except HttpClientError as exc:
             return RequestResultOfDoctorInfo (
                 status  = False,
                 phone   = phone,

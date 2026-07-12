@@ -1,8 +1,13 @@
 # LoginTools/OfficialServerLogin.py
 import asyncio
-import requests
 
 from .models import RequestResultOfVerificationCode, RequestResultOfAuth, RequestResultOfAccountToken
+from ..network.HttpClient import HttpClient
+from ..network.exceptions import (
+    HttpClientError,
+    InvalidResponseError,
+    RequestTimeoutError
+)
 
 class OfficialServerLogin:
 
@@ -14,8 +19,12 @@ class OfficialServerLogin:
     REQUEST_TIMEOUT = 10
     USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36"
 
-    def __init__(self):
-        """初始化逻辑"""
+    def __init__(
+        self,
+        http_client: HttpClient
+    ):
+        """初始化类方法"""
+        self.http_client = http_client
 
     def _get_verification_code(
         self,
@@ -38,13 +47,12 @@ class OfficialServerLogin:
         }
 
         try:
-            response = requests.post(
+            result = self.http_client.request_json(
+                "POST",
                 self.GET_CODE_URL,
                 json    = payload,
-                timeout = self.REQUEST_TIMEOUT,
                 headers = headers
             )
-            result = response.json()
 
             msg = result["msg"]
             status = result["status"]
@@ -61,23 +69,23 @@ class OfficialServerLogin:
                     phone   = phone,
                     message = msg
                 )
-        except requests.exceptions.Timeout:
-            return RequestResultOfVerificationCode (
+        except RequestTimeoutError as exc:
+            return RequestResultOfVerificationCode(
                 status  = False,
                 phone   = phone,
-                message = "服务器未在 10000 ms 内返回数据，请求超时"
+                message = str(exc),
             )
-        except ValueError:
-            return RequestResultOfVerificationCode (
+        except InvalidResponseError as exc:
+            return RequestResultOfVerificationCode(
                 status  = False,
                 phone   = phone,
-                message = "获取到非法 / 不被支持的返回数据"
+                message = str(exc),
             )
-        except requests.exceptions.RequestException as exc:
-            return RequestResultOfVerificationCode (
+        except HttpClientError as exc:
+            return RequestResultOfVerificationCode(
                 status  = False,
                 phone   = phone,
-                message = f"请求失败，错误类型：{exc}"
+                message = str(exc),
             )
 
     async def aget_verification_code(
@@ -111,13 +119,12 @@ class OfficialServerLogin:
             "Content-Type": "application/json"
         }
         try:
-            response = requests.post(
+            result = self.http_client.request_json(
+                "POST",
                 self.GET_TOKEN_URL,
                 json    = payload,
-                timeout = self.REQUEST_TIMEOUT,
                 headers = headers
             )
-            result = response.json()
 
             status = result["status"]
             if status == 0:
@@ -138,19 +145,19 @@ class OfficialServerLogin:
                     phone   = phone,
                     message = msg
                 )
-        except requests.exceptions.Timeout:
+        except RequestTimeoutError as exc:
             return RequestResultOfAuth (
                 status  = False,
                 phone   = phone,
                 message = "服务器未在 10000ms 内返回数据，请求超时"
             )
-        except ValueError:
+        except InvalidResponseError as exc:
             return RequestResultOfAuth (
                 status  = False,
                 phone   = phone,
                 message = "获取到非法 / 不被支持的数据"
             )
-        except requests.exceptions.RequestException as exc:
+        except HttpClientError as exc:
             return RequestResultOfAuth (
                 status  = False,
                 phone   = phone,
@@ -202,13 +209,12 @@ class OfficialServerLogin:
         }
 
         try:
-            response = requests.post(
+            result = self.http_client.request_json(
+                "POST",
                 self.GET_ACCOUNT_TOKEN_URL,
                 json    = payload,
-                timeout = self.REQUEST_TIMEOUT,
                 headers = headers
             )
-            result = response.json()
 
             if not isinstance(result, dict):
                 return RequestResultOfAccountToken (
@@ -234,13 +240,13 @@ class OfficialServerLogin:
                 phone   = phone,
                 message = msg or f"grant token 获取失败：status={status}, keys=[{', '.join(result.keys())}]"
             )
-        except requests.exceptions.Timeout:
+        except RequestTimeoutError as exc:
             return RequestResultOfAccountToken (
                 status  = False,
                 phone   = phone,
                 message = "服务器未在 10000ms 内返回数据，请求超时"
             )
-        except ValueError:
+        except InvalidResponseError as exc:
             return RequestResultOfAccountToken (
                 status  = False,
                 phone   = phone,
@@ -252,7 +258,7 @@ class OfficialServerLogin:
                 phone   = phone,
                 message = "返回数据缺少账号凭证字段"
             )
-        except requests.exceptions.RequestException as exc:
+        except HttpClientError as exc:
             return RequestResultOfAccountToken (
                 status  = False,
                 phone   = phone,

@@ -1,9 +1,14 @@
 # GachaHistory/GetGachaHistory.py
-import requests
 import asyncio
 
 from ..GetDoctorInfo.models import RequestResultOfDoctorInfo
 from .models import RequestResultOfPoolList, RequestResultOfGachaHistory
+from ..network.HttpClient import HttpClient
+from ..network.exceptions import (
+    HttpClientError,
+    InvalidResponseError,
+    RequestTimeoutError
+)
 
 class OfficialGetGachaHistory:
 
@@ -14,6 +19,9 @@ class OfficialGetGachaHistory:
     REQUEST_TIMEOUT = 10
     GACHA_PAGE_SIZE = 50
     USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36"
+
+    def __init__(self, http_client: HttpClient):
+        self.http_client = http_client
 
     def _base_headers(self) -> dict[str, str]:
         return {
@@ -50,14 +58,12 @@ class OfficialGetGachaHistory:
             "token": grant_token,
             "uid": uid,
         }
-        response = requests.post(
+        result = self.http_client.request_json(
+            "POST",
             self.BASE_REQUEST_U8_TOKEN_URL,
             json=payload,
-            timeout=self.REQUEST_TIMEOUT,
             headers=headers
         )
-        response.raise_for_status()
-        result = response.json()
         return result.get("data", {}).get("token")
 
 
@@ -76,13 +82,12 @@ class OfficialGetGachaHistory:
             "share_type": "",
             "share_by": "",
         }
-        response = requests.post(
+        response = self.http_client.request(
+            "POST",
             self.BASE_REQUEST_ROLE_LOGIN_URL,
             json=payload,
-            timeout=self.REQUEST_TIMEOUT,
             headers=headers
         )
-        response.raise_for_status()
         return response.cookies.get("ak-user-center")
 
 
@@ -120,17 +125,15 @@ class OfficialGetGachaHistory:
                 "ak-user-center": role_cookie
             }
 
-            response = requests.get(
+            result = self.http_client.request_json(
+                "GET",
                 self.BASE_REQUEST_POOL_URL,
                 params={
                     "uid": uid
                 },
-                timeout=self.REQUEST_TIMEOUT,
                 headers=headers,
                 cookies=cookies
             )
-            response.raise_for_status()
-            result = response.json()
 
             code = result.get("code")
             if code is None:
@@ -160,12 +163,12 @@ class OfficialGetGachaHistory:
                 code        = code,
                 pool_list   = pool_list
             )
-        except requests.exceptions.Timeout:
+        except RequestTimeoutError as exc:
             return RequestResultOfPoolList (
                 status  = False,
                 message = "服务器没有在 10000ms 内返回数据，请求超时"
             )
-        except ValueError:
+        except InvalidResponseError as exc:
             return RequestResultOfPoolList (
                 status  = False,
                 message = "获取到非法 / 不被支持的数据"
@@ -175,7 +178,7 @@ class OfficialGetGachaHistory:
                 status  = False,
                 message = "返回数据缺少必要字段"
             )
-        except requests.exceptions.RequestException as exc:
+        except HttpClientError as exc:
             return RequestResultOfPoolList (
                 status  = False,
                 message = f"请求失败！错误类型 {exc}"
@@ -220,15 +223,13 @@ class OfficialGetGachaHistory:
                 if cursor is not None:
                     params["pos"], params["gachaTs"] = cursor
 
-                response = requests.get(
+                result = self.http_client.request_json(
+                    "GET",
                     self.BASE_REQUEST_GACHA_HISTORY_URL,
                     params=params,
-                    timeout=self.REQUEST_TIMEOUT,
                     headers=headers,
                     cookies=cookies
                 )
-                response.raise_for_status()
-                result = response.json()
 
                 code = result.get("code")
                 if code is None:
@@ -287,12 +288,12 @@ class OfficialGetGachaHistory:
                 code            = code,
                 gacha_history   = gacha_history
             )
-        except requests.exceptions.Timeout:
+        except RequestTimeoutError as exc:
             return RequestResultOfGachaHistory (
                 status  = False,
                 message = "服务器没有在 10000ms 内返回数据，请求超时"
             )
-        except ValueError:
+        except InvalidResponseError as exc:
             return RequestResultOfGachaHistory (
                 status  = False,
                 message = "获取到非法 / 不被支持的数据"
@@ -302,7 +303,7 @@ class OfficialGetGachaHistory:
                 status  = False,
                 message = "返回数据缺少必要字段"
             )
-        except requests.exceptions.RequestException as exc:
+        except HttpClientError as exc:
             return RequestResultOfGachaHistory (
                 status  = False,
                 message = f"请求失败！错误类型 {exc}"
@@ -342,17 +343,17 @@ class OfficialGetGachaHistory:
                     status  = False,
                     message = "角色登录失败，请稍后再试"
                 )
-        except requests.exceptions.Timeout:
+        except RequestTimeoutError as exc:
             return RequestResultOfGachaHistory (
                 status  = False,
                 message = "服务器没有在 10000ms 内返回数据，请求超时"
             )
-        except (ValueError, TypeError):
+        except (InvalidResponseError, TypeError) as exc:
             return RequestResultOfGachaHistory (
                 status  = False,
                 message = "认证接口返回了无效数据"
             )
-        except requests.exceptions.RequestException as exc:
+        except HttpClientError as exc:
             return RequestResultOfGachaHistory (
                 status  = False,
                 message = f"请求失败！错误类型 {exc}"

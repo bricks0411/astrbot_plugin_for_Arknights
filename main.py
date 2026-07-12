@@ -1,4 +1,6 @@
 # main.py
+import time
+
 from pathlib import Path
 
 from astrbot.api.event import filter, AstrMessageEvent
@@ -11,6 +13,7 @@ from .LoginTools.OfficialServerLogin import OfficialServerLogin
 from .GetDoctorInfo.OfficialDoctorInfoHandler import OfficialDoctorInfoHandler
 from .GachaHistory.GetGachaHistory import OfficialGetGachaHistory
 from .storage.UserDB import DataStorageHandler
+from .network.HttpClient import HttpClient
 from .analysis.SixStarsAnalyser import GachaHistoryAnalyser
 from .analysis.GachaHistoryT2I import (
     GACHA_STATISTICS_RENDER_OPTIONS,
@@ -36,9 +39,16 @@ class ArknightsChecker(Star):
     def __init__(self, context: Context):
         super().__init__(context)
         # 各类功能模块
-        self.official_server_login = OfficialServerLogin()
-        self.official_doctor_info_handler = OfficialDoctorInfoHandler()
-        self.official_get_gacha_history = OfficialGetGachaHistory()
+        self.http_client = HttpClient(timeout = 10)                                                       # 统一化 HTTP 客户端
+        self.official_server_login = OfficialServerLogin(
+            self.http_client
+        )
+        self.official_doctor_info_handler = OfficialDoctorInfoHandler(
+            self.http_client
+        )
+        self.official_get_gacha_history = OfficialGetGachaHistory(
+            self.http_client
+        )
         self.gacha_history_analyser = GachaHistoryAnalyser(
             self._build_avatar_cache_path()
         )
@@ -198,7 +208,10 @@ class ArknightsChecker(Star):
             return
 
         yield event.plain_result("登录成功")
+        time.sleep(1)
         yield event.plain_result(f"欢迎，Dr. {doctor_name}")
+        time.sleep(1)
+        yield event.plain_result("若这是你第一次登录，请根据账号所在的服务器种类，使用 /官服抽卡记录更新 或 /B服抽卡记录更新 指令同步数据（目前仅支持官服）")
         self.PopPendingMessage(self.OFFICIAL, user_id)
 
 
