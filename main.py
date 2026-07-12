@@ -209,9 +209,9 @@ class ArknightsChecker(Star):
             return
 
         yield event.plain_result("登录成功")
-        await asyncio.time.sleep(1)
+        await asyncio.sleep(1)
         yield event.plain_result(f"欢迎，Dr. {doctor_name}")
-        await asyncio.time.sleep(1)
+        await asyncio.sleep(1)
         yield event.plain_result("若这是你第一次登录，请根据账号所在的服务器种类，使用 /官服抽卡记录更新 或 /B服抽卡记录更新 指令同步数据（目前仅支持官服）")
         self.PopPendingMessage(self.OFFICIAL, user_id)
 
