@@ -209,6 +209,10 @@ __marimo__/
 # Local API notes
 /API.md
 /avatar.md
+/operator.md
+
+# local html samples
+/aphrissa.html
 
 # IDE settings
 /.vscode
