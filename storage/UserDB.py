@@ -316,6 +316,71 @@ class DataStorageHandler:
         )
 
 
+    def _get_gacha_history_by_user(
+        self,
+        platform_name: str,
+        user_id: str,
+        server_type: str,
+    ) -> ReturnResultOfGachaHistoryFromDatabase:
+        """根据聊天平台用户绑定，仅从数据库读取抽卡记录。"""
+        if not platform_name or not user_id or not server_type:
+            return ReturnResultOfGachaHistoryFromDatabase(
+                status=False,
+                message="平台、用户或服务器信息不能为空",
+            )
+
+        try:
+            with self._lock:
+                binding = self._conn.execute(
+                    """
+                    SELECT account_id, nickname
+                    FROM account_bindings
+                    WHERE platform_name = ? AND user_id = ? AND server_type = ?
+                    """,
+                    (platform_name, user_id, server_type),
+                ).fetchone()
+        except sqlite3.Error as exc:
+            return ReturnResultOfGachaHistoryFromDatabase(
+                status=False,
+                message=f"数据库读取失败：{exc}",
+            )
+
+        if binding is None:
+            return ReturnResultOfGachaHistoryFromDatabase(
+                status=False,
+                message="尚未绑定官服账号",
+            )
+
+        doctor_info = RequestResultOfDoctorInfo(
+            status=True,
+            phone="",
+            token="",
+            uid=binding["account_id"],
+        )
+        history_result = self._get_gacha_history(doctor_info)
+        return ReturnResultOfGachaHistoryFromDatabase(
+            status=history_result.status,
+            message=history_result.message,
+            gacha_history=history_result.gacha_history,
+            nickname=binding["nickname"],
+        )
+
+
+    async def aget_gacha_history_by_user(
+        self,
+        platform_name: str,
+        user_id: str,
+        server_type: str,
+    ) -> ReturnResultOfGachaHistoryFromDatabase:
+        """在线程中根据聊天平台用户绑定读取本地抽卡记录。"""
+        return await asyncio.to_thread(
+            self._get_gacha_history_by_user,
+            platform_name,
+            user_id,
+            server_type,
+        )
+
+
     def _update_user_token(
         self,
         platform_name: str,

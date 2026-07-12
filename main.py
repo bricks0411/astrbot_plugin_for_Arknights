@@ -247,7 +247,7 @@ class ArknightsChecker(Star):
 
     @filter.command("官服抽卡记录更新")
     async def UpdateGachaHistory(self, event: AstrMessageEvent):
-        """实现抽卡记录持久化渲染，查询近 90 天内记录存储至本地"""
+        """实现抽卡记录持久化存储，查询近 90 天内记录存储至本地"""
         user_id = event.get_sender_id()
         user_info, credential_error = await self.GetStoredOfficialUserInfo(event)
         if not user_info:
@@ -299,47 +299,12 @@ class ArknightsChecker(Star):
 
     @filter.command("官服抽卡记录查询")
     async def GetGachaHistory(self, event: AstrMessageEvent):
-        """查询官服角色抽卡记录，并对结果进行解析，使用 t2i 对结果进行图片化渲染，渲染失败则用文字兜底"""
+        """读取本地抽卡记录并生成统计图片，渲染失败时使用文本兜底。"""
         user_id = event.get_sender_id()
-        user_info, credential_error = await self.GetStoredOfficialUserInfo(event)
-
-        if not user_info:
-            logger.warn(f"用户 {user_id} 没有可用的登录凭证：{credential_error}")
-            yield event.plain_result("请先登录官服账号")
-            return
-
-        pool_info = await self.official_get_gacha_history.aget_pool_list(user_info)
-        if not pool_info.status:
-            logger.warn(pool_info.message)
-            if self.IsCredentialInvalid(pool_info.message):
-                yield event.plain_result("登录凭证已失效，请重新登录官服账号")
-                return
-            yield event.plain_result(pool_info.message)
-            return
-
-        gacha_request_result = await self.official_get_gacha_history.aget_gacha_history(
-            user_info,
-            pool_info.pool_list or [],
-        )
-        if not gacha_request_result.status:
-            logger.warn(gacha_request_result.message)
-            if self.IsCredentialInvalid(gacha_request_result.message):
-                yield event.plain_result("登录凭证已失效，请重新登录官服账号")
-                return
-            yield event.plain_result(gacha_request_result.message)
-            return
-
-        update_result = await self.data_storage_handler.aupdate_gacha_history(
-            gacha_request_result.gacha_history or [],
-            user_info,
-        )
-        if not update_result.status:
-            logger.warn(update_result.message)
-            yield event.plain_result(f"抽卡记录保存失败：{update_result.message}")
-            return
-
-        stored_history_result = await self.data_storage_handler.aget_gacha_history(
-            user_info
+        stored_history_result = await self.data_storage_handler.aget_gacha_history_by_user(
+            event.get_platform_name(),
+            user_id,
+            self.OFFICIAL,
         )
         if stored_history_result.status is False:
             logger.warn(stored_history_result.message)
@@ -350,7 +315,7 @@ class ArknightsChecker(Star):
         try:
             statistics = await self.gacha_history_analyser.abuild_statistics(
                 gacha_history,
-                user_info.nickName,
+                stored_history_result.nickname,
             )
         except (TypeError, ValueError) as exc:
             logger.warn(f"抽卡记录统计失败：{exc}")

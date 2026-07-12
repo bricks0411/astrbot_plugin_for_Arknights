@@ -12,6 +12,7 @@ class ReturnResultOfGachaHistoryFromDatabase:
     status: bool
     message: str | None = None
     gacha_history: list | None = None
+    nickname: str | None = None
 
 @dataclass(slots=True, frozen=True)
 class ReturnResultOfUserToken:
