@@ -16,11 +16,16 @@ from .GachaHistory.GetGachaHistory import OfficialGetGachaHistory
 from .storage.UserDB import DataStorageHandler
 from .network.HttpClient import HttpClient
 from .analysis.SixStarsAnalyser import GachaHistoryAnalyser
+from .OperatorInfo import (
+    OperatorEncyclopedia,
+    OperatorInfoError,
+    OperatorNotFoundError,
+    PrtsWikiClient,
+)
 from .analysis.GachaHistoryT2I import (
     GACHA_STATISTICS_RENDER_OPTIONS,
     GACHA_STATISTICS_TEMPLATE,
 )
-
 from .GetDoctorInfo.models import RequestResultOfDoctorInfo
 
 PLUGIN_NAME = "astrbot_plugin_for_Arknights"
@@ -53,6 +58,13 @@ class ArknightsChecker(Star):
         self.gacha_history_analyser = GachaHistoryAnalyser(
             self._build_avatar_cache_path()
         )
+        self.operator_encyclopedia = OperatorEncyclopedia(
+            PrtsWikiClient(self.http_client),
+            self._build_operator_info_cache_path(),
+            cache_ttl_seconds   = 24 * 60 * 60,
+            download_portrait   = True
+        )
+
         # 官服内存信息维护
         self.pending_verification_code_by_userid_official: dict[str, str] = {}                            # 等待验证码的用户列表
         # B 服内存信息维护
@@ -78,6 +90,12 @@ class ArknightsChecker(Star):
         """构造永久干员头像缓存目录。"""
         plugin_data_dir = Path(get_astrbot_data_path()) / "plugin_data" / PLUGIN_NAME
         return plugin_data_dir / "avatar_cache"
+
+
+    def _build_operator_info_cache_path(self) -> Path:
+        """构造干员百科数据及立绘缓存目录。"""
+        plugin_data_dir = Path(get_astrbot_data_path()) / "plugin_data" / PLUGIN_NAME
+        return plugin_data_dir / "operator_info_cache"
 
 
     def AddPendingMessage(self, server_type: str, user_id: str, phone: str):
@@ -348,6 +366,38 @@ class ArknightsChecker(Star):
         except Exception as exc:
             logger.error(f"抽卡统计图片渲染失败，回退到文本：{exc}")
             yield event.plain_result(fallback_text)
+
+
+    @filter.command("干员百科")
+    async def GetOperatorInfo(self, event: AstrMessageEvent):
+        """通过 prts.wiki 获取干员百科信息"""
+        messages = event.get_messages()
+
+        args = self.GetArgs(messages)
+        if len(args) != 2:
+            logger.warn(f"参数数量不合法，期望 2，接收到 {len(args)}")
+            yield event.plain_result("用法：/干员百科 <干员名称>")
+            return
+
+        operator_name = args[1]
+        logger.info(f"解析到干员名：{operator_name}")
+        try:
+            image_url = await self.operator_encyclopedia.query_and_render(
+                self,
+                operator_name
+            )
+            logger.info(f"获取到图片 URL：{image_url}")
+            yield event.image_result(image_url)
+        except OperatorNotFoundError:
+            logger.warn(f"PRTS 中没有找到干员：{operator_name}")
+            yield event.plain_result(f"PRTS 中没有找到干员：{operator_name}")
+        except OperatorInfoError as exc:
+            logger.warn(f"干员百科查询失败：{exc}")
+            yield event.plain_result(f"干员百科查询失败：{exc}")
+        except Exception as exc:
+            logger.error(f"干员百科图片渲染失败：{exc}")
+            yield event.plain_result("干员数据获取成功，但图片渲染失败，退回至文本数据")
+
 
     async def terminate(self):
         """可选择实现异步的插件销毁方法，当插件被卸载/停用时会调用。"""

@@ -192,13 +192,13 @@ class DataStorageHandler:
                 for gacha in gacha_history
             ]
         except (KeyError, TypeError) as exc:
-            return ReturnResultOfDatabaseOperation(
+            return ReturnResultOfDatabaseOperation (
                 status=False,
                 message=f"抽卡记录格式异常：{exc}",
             )
 
         if not params:
-            return ReturnResultOfDatabaseOperation(
+            return ReturnResultOfDatabaseOperation (
                 status  = True,
                 message = "没有需要更新的抽卡记录",
             )
@@ -220,12 +220,12 @@ class DataStorageHandler:
                         params,
                     )
         except sqlite3.Error as exc:
-            return ReturnResultOfDatabaseOperation(
-                status=False,
-                message=f"数据库写入失败：{exc}",
+            return ReturnResultOfDatabaseOperation (
+                status  = False,
+                message = f"数据库写入失败：{exc}",
             )
 
-        return ReturnResultOfDatabaseOperation(
+        return ReturnResultOfDatabaseOperation (
             status  = True,
             message = f"新增 {cursor.rowcount} 条抽卡记录",
         )
@@ -278,9 +278,9 @@ class DataStorageHandler:
                     (uid,)
                 ).fetchall()
         except sqlite3.Error as exc:
-            return ReturnResultOfGachaHistoryFromDatabase(
-                status=False,
-                message=f"数据库读取失败：{exc}",
+            return ReturnResultOfGachaHistoryFromDatabase (
+                status  = False,
+                message = f"数据库读取失败：{exc}",
             )
 
         gacha_history = [
@@ -324,9 +324,9 @@ class DataStorageHandler:
     ) -> ReturnResultOfGachaHistoryFromDatabase:
         """根据聊天平台用户绑定，仅从数据库读取抽卡记录。"""
         if not platform_name or not user_id or not server_type:
-            return ReturnResultOfGachaHistoryFromDatabase(
-                status=False,
-                message="平台、用户或服务器信息不能为空",
+            return ReturnResultOfGachaHistoryFromDatabase (
+                status  = False,
+                message = "平台、用户或服务器信息不能为空",
             )
 
         try:
@@ -340,29 +340,29 @@ class DataStorageHandler:
                     (platform_name, user_id, server_type),
                 ).fetchone()
         except sqlite3.Error as exc:
-            return ReturnResultOfGachaHistoryFromDatabase(
-                status=False,
-                message=f"数据库读取失败：{exc}",
+            return ReturnResultOfGachaHistoryFromDatabase (
+                status  = False,
+                message = f"数据库读取失败：{exc}",
             )
 
         if binding is None:
-            return ReturnResultOfGachaHistoryFromDatabase(
-                status=False,
-                message="尚未绑定官服账号",
+            return ReturnResultOfGachaHistoryFromDatabase (
+                status  = False,
+                message = "尚未绑定官服账号",
             )
 
-        doctor_info = RequestResultOfDoctorInfo(
-            status=True,
-            phone="",
-            token="",
-            uid=binding["account_id"],
+        doctor_info = RequestResultOfDoctorInfo (
+            status  = True,
+            phone   = "",
+            token   = "",
+            uid     = binding["account_id"],
         )
         history_result = self._get_gacha_history(doctor_info)
-        return ReturnResultOfGachaHistoryFromDatabase(
-            status=history_result.status,
-            message=history_result.message,
-            gacha_history=history_result.gacha_history,
-            nickname=binding["nickname"],
+        return ReturnResultOfGachaHistoryFromDatabase (
+            status          = history_result.status,
+            message         = history_result.message,
+            gacha_history   = history_result.gacha_history,
+            nickname        = binding["nickname"],
         )
 
 
@@ -390,12 +390,12 @@ class DataStorageHandler:
     ) -> ReturnResultOfDatabaseOperation:
         """新增或更新指定平台用户的账号 token。"""
         if not platform_name or not user_id or not server_type:
-            return ReturnResultOfDatabaseOperation(
+            return ReturnResultOfDatabaseOperation (
                 status=False,
                 message="平台、用户或服务器信息不能为空",
             )
         if not user_info or not user_info.uid or not user_info.token:
-            return ReturnResultOfDatabaseOperation(
+            return ReturnResultOfDatabaseOperation (
                 status=False,
                 message="账号 UID 或 token 不能为空",
             )
@@ -432,12 +432,12 @@ class DataStorageHandler:
                         ),
                     )
         except sqlite3.Error as exc:
-            return ReturnResultOfDatabaseOperation(
+            return ReturnResultOfDatabaseOperation (
                 status  = False,
                 message = f"token 保存失败：{exc}",
             )
 
-        return ReturnResultOfDatabaseOperation(
+        return ReturnResultOfDatabaseOperation (
             status  = True,
             message = "token 已更新",
         )
@@ -468,7 +468,7 @@ class DataStorageHandler:
     ) -> ReturnResultOfUserToken:
         """查询指定平台用户的 token 和游戏账号 UID。"""
         if not platform_name or not user_id or not server_type:
-            return ReturnResultOfUserToken(
+            return ReturnResultOfUserToken (
                 status  = False,
                 message = "平台、用户或服务器信息不能为空",
             )
@@ -484,13 +484,13 @@ class DataStorageHandler:
                     (platform_name, user_id, server_type),
                 ).fetchone()
         except sqlite3.Error as exc:
-            return ReturnResultOfUserToken(
+            return ReturnResultOfUserToken (
                 status  = False,
                 message = f"token 查询失败：{exc}",
             )
 
         if row is None:
-            return ReturnResultOfUserToken(
+            return ReturnResultOfUserToken (
                 status  = False,
                 message = "尚未保存登录凭证",
             )
@@ -501,12 +501,12 @@ class DataStorageHandler:
                 encrypted_token.encode("ascii")
             ).decode("utf-8")
         except (InvalidToken, UnicodeError, AttributeError):
-            return ReturnResultOfUserToken(
+            return ReturnResultOfUserToken (
                 status  = False,
                 message = "保存的登录凭证无法解密，请重新登录",
             )
 
-        return ReturnResultOfUserToken(
+        return ReturnResultOfUserToken (
             status      = True,
             message     = "token 查询成功",
             user_token  = user_token,
