@@ -60,10 +60,12 @@ class OperatorData:
     warnings: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
+        """将干员数据及其嵌套数据类递归转换为字典。"""
         return asdict(self)
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> "OperatorData":
+        """从缓存字典恢复干员数据及其嵌套对象。"""
         return cls(
             name=value["name"],
             rarity=value.get("rarity"),

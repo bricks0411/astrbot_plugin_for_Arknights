@@ -199,7 +199,7 @@ async def query_operator(self, event: AstrMessageEvent, name: str):
 | `OperatorNotFoundError` | 页面不存在或标题无效 |
 | `OperatorResponseError` | PRTS/MediaWiki 响应结构异常 |
 | `OperatorParseError` | 页面存在，但不是可识别的干员页面 |
-| `ValueError` | 输入为空或超过 64 字符 |
+| `OperatorValidationError` | 输入为空或超过 64 字符 |
 
 建议将“未找到”单独提示用户，其余异常记录日志并返回统一的稍后重试提示。
 

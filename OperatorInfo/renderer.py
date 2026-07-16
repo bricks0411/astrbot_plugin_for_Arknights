@@ -18,7 +18,9 @@ class HtmlRenderer(Protocol):
         data: dict,
         return_url: bool = True,
         options: dict | None = None,
-    ) -> str: ...
+    ) -> str:
+        """使用 HTML 模板和数据生成图片或图片地址。"""
+        ...
 
 
 OPERATOR_INFO_RENDER_OPTIONS = {
@@ -30,6 +32,7 @@ OPERATOR_INFO_RENDER_OPTIONS = {
 
 
 def build_operator_render_data(operator: OperatorData, *, include_portrait: bool = True) -> dict:
+    """字典化待渲染干员数据，方便 html 脚本编制"""
     portrait = operator.portrait_url if include_portrait else None
     if include_portrait and operator.portrait_path:
         path = Path(operator.portrait_path)

@@ -4,6 +4,7 @@ from .exceptions import (
     OperatorNotFoundError,
     OperatorParseError,
     OperatorResponseError,
+    OperatorValidationError,
 )
 from .models import (
     OperatorAttribute,
@@ -32,6 +33,7 @@ __all__ = [
     "OperatorNotFoundError",
     "OperatorParseError",
     "OperatorResponseError",
+    "OperatorValidationError",
     "OperatorSkill",
     "PrtsWikiClient",
     "build_operator_render_data",

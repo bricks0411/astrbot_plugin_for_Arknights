@@ -21,9 +21,11 @@ class OfficialGetGachaHistory:
     USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36"
 
     def __init__(self, http_client: HttpClient):
+        """初始化官方抽卡记录客户端。"""
         self.http_client = http_client
 
     def _base_headers(self) -> dict[str, str]:
+        """构造访问明日方舟用户中心接口的基础请求头。"""
         return {
             "Accept": "application/json, text/plain, */*",
             "Accept-Language": "zh-CN,zh;q=0.9",
@@ -46,6 +48,7 @@ class OfficialGetGachaHistory:
 
 
     def _get_u8_token(self, grant_token: str, uid: str) -> str | None:
+        """使用授权令牌和 UID 换取角色 U8 Token。"""
         headers = {
             **self._base_headers(),
             "Content-Type": "application/json",
@@ -68,6 +71,7 @@ class OfficialGetGachaHistory:
 
 
     def _get_role_cookie(self, u8_token: str) -> str | None:
+        """登录指定角色并返回用户中心会话 Cookie。"""
         headers = {
             **self._base_headers(),
             "Content-Type": "application/json",
@@ -360,6 +364,7 @@ class OfficialGetGachaHistory:
             )
 
         gacha_history = []
+        success_message = "请求成功"
 
         for pool in pool_list:
             if not isinstance(pool, dict) or not pool.get("id"):
@@ -385,6 +390,11 @@ class OfficialGetGachaHistory:
                     message = result.message
                 )
 
+            # 审查问题是最终返回值直接读取循环变量 result，代码依赖最后一次循环一定执行且成功
+            # 每轮成功后显式保存消息，使聚合结果的数据来源清楚并避免循环变量泄漏到返回阶段
+            if result.message:
+                success_message = result.message
+
             for record in result.gacha_history or []:
                 if isinstance(record, dict):
                     record["category"] = pool["id"]
@@ -392,7 +402,7 @@ class OfficialGetGachaHistory:
 
         return RequestResultOfGachaHistory (
             status          = True,
-            message         = result.message,
+            message         = success_message,
             code            = 0,
             gacha_history   = gacha_history
         )

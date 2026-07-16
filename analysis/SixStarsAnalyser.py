@@ -59,18 +59,21 @@ class GachaHistoryAnalyser:
     PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
     def __init__(self, avatar_cache_dir: str | Path):
+        """初始化抽卡统计分析器并创建干员头像缓存目录。"""
         self.avatar_cache_dir = Path(avatar_cache_dir)
         self.avatar_cache_dir.mkdir(parents=True, exist_ok=True)
         self._avatar_cache_lock = RLock()
 
     @staticmethod
     def build_operator_avatar_url(name: str) -> str:
+        """根据干员名称构造 PRTS Wiki 头像文件的直链。"""
         filename = f"头像_{name}.png"
         digest = hashlib.md5(filename.encode("utf-8")).hexdigest()
         return f"https://media.prts.wiki/{digest[0]}/{digest[:2]}/{quote(filename)}"
 
     @staticmethod
     def _bar_style(pulls: int) -> tuple[float, str]:
+        """根据出六星所用抽数计算进度条宽度和颜色。"""
         width = min(100.0, max(4.0, pulls / 70 * 100))
         if pulls < 10:
             color = "linear-gradient(90deg, #58e0b5, #9af1d5)"
@@ -84,6 +87,7 @@ class GachaHistoryAnalyser:
 
     @staticmethod
     def _split_doctor_name(doctor_name: str | None) -> tuple[str, str | None]:
+        """将博士名称拆分为昵称和可选的数字后缀。"""
         value = (doctor_name or "博士").strip()
         match = re.match(r"^(.*?)(#\d+)$", value)
         if not match:
@@ -92,6 +96,7 @@ class GachaHistoryAnalyser:
 
     @staticmethod
     def _category_name(record: dict) -> str:
+        """把抽卡记录中的卡池类别转换为展示名称。"""
         category = record.get("category")
         if category == "normal":
             return "标准寻访"
@@ -101,6 +106,7 @@ class GachaHistoryAnalyser:
 
     @staticmethod
     def _next_six_star_rate(pulls: int) -> float:
+        """计算当前垫抽数下下一抽获得六星的概率。"""
         return float(max(2, 2 * (pulls - 50)))
 
     def _build_statistics(
@@ -108,6 +114,7 @@ class GachaHistoryAnalyser:
         gacha_history: list[dict],
         doctor_name: str | None = None,
     ) -> GachaStatistics:
+        """汇总原始抽卡记录，生成按类别和卡池划分的统计数据。"""
         records_by_pool: dict[str, list[dict]] = defaultdict(list)
         for record in gacha_history:
             if isinstance(record, dict):
@@ -208,6 +215,7 @@ class GachaHistoryAnalyser:
         gacha_history: list[dict],
         doctor_name: str | None = None,
     ) -> GachaStatistics:
+        """在线程中构建统计数据并填充本地缓存的头像。"""
         statistics = await asyncio.to_thread(
             self._build_statistics,
             gacha_history,
@@ -216,11 +224,13 @@ class GachaHistoryAnalyser:
         return await asyncio.to_thread(self._hydrate_avatar_cache, statistics)
 
     def _avatar_cache_path(self, operator_name: str) -> Path:
+        """返回指定干员对应的头像缓存文件路径。"""
         digest = hashlib.sha256(operator_name.encode("utf-8")).hexdigest()
         return self.avatar_cache_dir / f"{digest}.png"
 
     @staticmethod
     def _avatar_data_url(content: bytes) -> str:
+        """将 PNG 图片字节编码为可嵌入页面的 Data URL。"""
         encoded = base64.b64encode(content).decode("ascii")
         return f"data:image/png;base64,{encoded}"
 
@@ -255,6 +265,7 @@ class GachaHistoryAnalyser:
             return remote_url
 
     def _hydrate_avatar_cache(self, statistics: GachaStatistics) -> GachaStatistics:
+        """并发下载缺失头像，并用本地 Data URL 更新统计数据。"""
         avatar_sources = {
             item.operator_name: item.avatar_url
             for pool in statistics.pools
@@ -285,10 +296,12 @@ class GachaHistoryAnalyser:
 
     @staticmethod
     def build_render_data(statistics: GachaStatistics) -> dict:
+        """将统计数据类转换为 HTML 渲染所需的字典。"""
         return asdict(statistics)
 
     @staticmethod
     def build_text_summary(statistics: GachaStatistics) -> str:
+        """生成图片渲染失败时使用的纯文本统计摘要。"""
         sections = [
             f"博士：{statistics.doctor_name}{statistics.doctor_suffix or ''}",
             f"生涯总抽数：{statistics.total_pulls}",

@@ -41,8 +41,13 @@ class ArknightsChecker(Star):
     # 服务器种类
     OFFICIAL = "official"
     BILIBILI = "bilibili"
+    # 验证码有效期
+    VERIFICATION_CODE_TTL_SECONDS = 1800
+    # TTL 轮询区间
+    CHECK_TTL_INTERVAL = 60
 
     def __init__(self, context: Context):
+        """初始化插件依赖、功能服务和用户会话状态。"""
         super().__init__(context)
         # 各类功能模块
         self.http_client = HttpClient(timeout = 10)                                                       # 统一化 HTTP 客户端
@@ -66,18 +71,18 @@ class ArknightsChecker(Star):
         )
 
         # 官服内存信息维护
-        self.pending_verification_code_by_userid_official: dict[str, str] = {}                            # 等待验证码的用户列表
+        self.pending_verification_code_by_userid_official: dict[str, str] = {}                                          # 等待验证码的用户列表
         # B 服内存信息维护
         self.pending_verification_code_by_userid_bilibili: dict[str, str] = {}
+        # 统一临时信息维护
+        self.pending_verification_code_by_userid_TTL: dict[tuple[str, str], float] = {}                                             # 等待用户 TTL
         # 统一持久化信息维护
         self.data_storage_handler = DataStorageHandler(
             db_path         = self._build_user_db_path(),
             busy_timeout_ms = 5000
         )
-
-
-    async def initialize(self):
-        """可选择实现异步的插件初始化方法，当实例化该插件类之后会自动调用该方法"""
+        # 持久化后台任务定义
+        self._user_TTL_check_loop_task: asyncio.Task | None = None
 
 
     def _build_user_db_path(self) -> Path:
@@ -100,6 +105,12 @@ class ArknightsChecker(Star):
 
     def AddPendingMessage(self, server_type: str, user_id: str, phone: str):
         """封装等待列表的信息更新逻辑"""
+        # 更新 TTL 信息
+        # 使用 (user_id, server_type) 统一维护不同服务器的等待元组
+        TTL_tuple = (user_id, server_type)
+        current_time = time.monotonic()
+        self.pending_verification_code_by_userid_TTL[TTL_tuple] = current_time
+        # 删除临时信息
         if server_type == "official":
             self.pending_verification_code_by_userid_official[user_id] = phone
         elif server_type == "bilibili":
@@ -110,6 +121,10 @@ class ArknightsChecker(Star):
 
     def PopPendingMessage(self, server_type: str, user_id: str):
         """封装等待列表的信息删除逻辑"""
+        # 删除 TTL 信息
+        TTL_tuple = (user_id, server_type)
+        self.pending_verification_code_by_userid_TTL.pop(TTL_tuple, None)
+        # 删除临时信息
         if server_type == "official":
             self.pending_verification_code_by_userid_official.pop(user_id, None)
         elif server_type == "bilibili":
@@ -129,8 +144,30 @@ class ArknightsChecker(Star):
         return args
 
 
+    async def initialize(self):
+        """可选择实现异步的插件初始化方法，当实例化该插件类之后会自动调用该方法"""
+        # 启用 TTL 检测
+        self._user_TTL_check_loop_task = asyncio.create_task(self._TTL_check_loop())
+
+
+    async def _TTL_check_loop(self):
+        """周期性清理过期内存用户信息"""
+        while True:
+            expired_users = []
+            now = time.monotonic()
+            for (user_id, server_type), create_time in self.pending_verification_code_by_userid_TTL.items():
+                if now - create_time >= self.VERIFICATION_CODE_TTL_SECONDS:
+                    expired_users.append((user_id, server_type))
+
+            for (user_id, server_type) in expired_users:
+                self.PopPendingMessage(server_type, user_id)
+
+            await asyncio.sleep(self.CHECK_TTL_INTERVAL)
+
+
     @staticmethod
     def MaskPhone(phone: str | int) -> str:
+        """隐藏手机号中间四位，避免日志或消息泄露完整号码。"""
         value = str(phone)
         if len(value) < 7:
             return "***"
@@ -166,7 +203,7 @@ class ArknightsChecker(Star):
         return message in {"获取角色 token 失败", "角色登录失败，请稍后再试"}
 
 
-    @filter.command("验证码")
+    @filter.command("官服验证码")
     @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
     async def GetAndSendVerificationCodeWithOfficialServer(self, event: AstrMessageEvent):
         """收集用户给出的手机验证码，交由服务器进行校验"""
@@ -176,7 +213,7 @@ class ArknightsChecker(Star):
         args = self.GetArgs(messages)
         if len(args) != 2:
             logger.warn(f"参数数量不合法，期望 2，接收到 {len(args)}")
-            yield event.plain_result("用法：/验证码 <接收到的验证码>")
+            yield event.plain_result("用法：/官服验证码 <接收到的验证码>")
             return
 
         verification_code = args[1]
@@ -184,6 +221,21 @@ class ArknightsChecker(Star):
         phone = self.pending_verification_code_by_userid_official.get(user_id)
         if not phone:
             yield event.plain_result("请先发送 /方舟官服登录 <手机号码> 获取验证码")
+            return
+
+        current_time = time.monotonic()
+        TTL_tuple = (user_id, self.OFFICIAL)
+        create_time = self.pending_verification_code_by_userid_TTL.get(TTL_tuple)
+
+        if create_time is None:
+            logger.warn(f"用户 {user_id} 对应的 create_time 为 None")
+            yield event.plain_result("用户状态未同步，请发送 /方舟官服登录 <手机号码> 获取新验证码")
+            return
+
+        if current_time - create_time >= self.VERIFICATION_CODE_TTL_SECONDS:
+            logger.warn(f"用户 {user_id} 已过期")
+            self.PopPendingMessage(self.OFFICIAL, user_id)
+            yield event.plain_result("验证码已过期，请发送 /方舟官服登录 <手机号码> 获取新验证码")
             return
 
         result = await self.official_server_login.aget_auth_token(phone, verification_code)
@@ -253,7 +305,7 @@ class ArknightsChecker(Star):
         logger.info(f"解析到用户手机号：{self.MaskPhone(phone)}")
         result = await self.official_server_login.aget_verification_code(phone)
 
-        logger.info(f"验证码发送结果：status={result.status}")
+        logger.info(f"验证码发送结果：status = {result.status}")
 
         if result.status is not True:
             logger.warn(result.message)
@@ -261,7 +313,7 @@ class ArknightsChecker(Star):
             return
 
         logger.info(result.message)
-        yield event.plain_result(f"验证码发送成功，30 分钟内有效，请发送 /验证码 <接收到的验证码> 执行下一步操作")
+        yield event.plain_result(f"验证码发送成功，30 分钟内有效，请发送 /官服验证码 <接收到的验证码> 执行下一步操作")
         self.AddPendingMessage(self.OFFICIAL, user_id, phone)
         # self.pending_verification_code_by_userid[user_id] = phone
         # 初始化并启动计时器
@@ -360,7 +412,7 @@ class ArknightsChecker(Star):
             image_url = await self.html_render(
                 GACHA_STATISTICS_TEMPLATE,
                 self.gacha_history_analyser.build_render_data(statistics),
-                options=GACHA_STATISTICS_RENDER_OPTIONS,
+                options = GACHA_STATISTICS_RENDER_OPTIONS,
             )
             yield event.image_result(image_url)
         except Exception as exc:
@@ -399,6 +451,15 @@ class ArknightsChecker(Star):
             yield event.plain_result("干员数据获取成功，但图片渲染失败，退回至文本数据")
 
 
+
     async def terminate(self):
         """可选择实现异步的插件销毁方法，当插件被卸载/停用时会调用。"""
+        # 停止 TTL 后台任务
+        if self._user_TTL_check_loop_task:
+            self._user_TTL_check_loop_task.cancel()
+            try:
+                await self._user_TTL_check_loop_task
+            except asyncio.CancelledError:
+                pass
+        # 关闭数据库连接
         await self.data_storage_handler.aclose()

@@ -3,6 +3,10 @@ class OperatorInfoError(Exception):
     """干员百科模块的基础异常。"""
 
 
+class OperatorValidationError(OperatorInfoError):
+    """干员百科查询参数不符合要求。"""
+
+
 class OperatorNotFoundError(OperatorInfoError):
     """PRTS 中不存在指定页面。"""
 

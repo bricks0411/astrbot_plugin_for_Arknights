@@ -19,6 +19,7 @@ class HttpClient:
         timeout: int = DEFAULT_TIMEOUT,
         user_agent: str = DEFAULT_USER_AGENT
     ):
+        """初始化统一 HTTP 客户端的超时时间和 User-Agent。"""
         self.timeout = timeout
         self.user_agent = user_agent
 
@@ -30,6 +31,7 @@ class HttpClient:
         headers: dict[str, str] | None = None,
         **kwargs: Any
     ) -> requests.Response:
+        """发送 HTTP 请求，并将 requests 异常转换为项目统一异常。"""
         request_headers = {
             "User-Agent": self.user_agent,
             **(headers or {})
@@ -62,6 +64,7 @@ class HttpClient:
         headers: dict[str, str] | None = None,
         **kwargs: Any
     ) -> dict:
+        """发送 HTTP 请求并校验响应内容是否为 JSON 对象。"""
         response = self.request(
             method,
             url,

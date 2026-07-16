@@ -3,6 +3,7 @@
 import asyncio
 import sqlite3
 import time
+import warnings
 
 from cryptography.fernet import Fernet, InvalidToken
 from pathlib import Path
@@ -52,8 +53,14 @@ class DataStorageHandler:
         key_path.write_bytes(key)
         try:
             key_path.chmod(0o600)
-        except OSError:
-            pass
+        except OSError as exc:
+            # 审查问题是密钥权限收紧失败后异常被静默吞掉，部署者无法发现凭证保护降级
+            # Windows 等平台可能不支持 POSIX 权限，因此保留运行能力并发出可观测的运行时警告
+            warnings.warn(
+                f"无法将 token.key 权限设置为仅当前用户可读写：{exc}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
         return key
 
 
@@ -132,15 +139,23 @@ class DataStorageHandler:
                 row["name"]
                 for row in self._conn.execute("PRAGMA table_info(gacha_records)")
             }
-            if "category" not in gacha_columns:
+            with self._conn:
+                if "category" not in gacha_columns:
+                    self._conn.execute(
+                        "ALTER TABLE gacha_records ADD COLUMN category TEXT NOT NULL DEFAULT ''"
+                    )
+
+                # 无论 category 是本次新增还是由中间版本提前创建，都补齐遗留空分类。
                 self._conn.execute(
-                    "ALTER TABLE gacha_records ADD COLUMN category TEXT NOT NULL DEFAULT ''"
-                )
-                self._conn.execute(
-                    "UPDATE gacha_records SET category = 'normal' WHERE pool_name = '标准寻访'"
-                )
-                self._conn.execute(
-                    "UPDATE gacha_records SET category = 'classic' WHERE pool_name = '中坚寻访'"
+                    """
+                    UPDATE gacha_records
+                    SET category = CASE
+                        WHEN pool_name = '标准寻访' THEN 'normal'
+                        WHEN pool_name = '中坚寻访' THEN 'classic'
+                        ELSE 'limited'
+                    END
+                    WHERE category = ''
+                    """
                 )
 
 
@@ -466,7 +481,7 @@ class DataStorageHandler:
         user_id: str,
         server_type: str,
     ) -> ReturnResultOfUserToken:
-        """查询指定平台用户的 token 和游戏账号 UID。"""
+        """查询指定平台用户的 token 和游戏账号 UID"""
         if not platform_name or not user_id or not server_type:
             return ReturnResultOfUserToken (
                 status  = False,
@@ -531,6 +546,7 @@ class DataStorageHandler:
 
 
     def close(self):
+        """在线程锁保护下关闭 SQLite 数据库连接。"""
         with self._lock:
             self._conn.close()
 
