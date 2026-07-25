@@ -4,10 +4,22 @@ import asyncio
 from .models import RequestResultOfVerificationCode, RequestResultOfAuth, RequestResultOfAccountToken
 from ..network.HttpClient import HttpClient
 from ..network.exceptions import (
-    HttpClientError,
-    InvalidResponseError,
-    RequestTimeoutError
+    HttpClientError
 )
+from ..network.validation import (
+    require_dict,
+    require_int,
+    require_optional_str,
+    require_str,
+)
+
+
+def _response_message(result: dict, default: str) -> str:
+    for field in ("msg", "message", "error"):
+        message = require_optional_str(result.get(field), field)
+        if message:
+            return message
+    return default
 
 class OfficialServerLogin:
 
@@ -54,8 +66,11 @@ class OfficialServerLogin:
                 headers = headers
             )
 
-            msg = result["msg"]
-            status = result["status"]
+            status = require_int(result.get("status"), "status")
+            msg = _response_message(
+                result,
+                "验证码发送成功" if status == 0 else "验证码发送失败",
+            )
 
             if status == 0:
                 return RequestResultOfVerificationCode (
@@ -69,20 +84,8 @@ class OfficialServerLogin:
                     phone   = phone,
                     message = msg
                 )
-        except RequestTimeoutError as exc:
-            return RequestResultOfVerificationCode(
-                status  = False,
-                phone   = phone,
-                message = str(exc),
-            )
-        except InvalidResponseError as exc:
-            return RequestResultOfVerificationCode(
-                status  = False,
-                phone   = phone,
-                message = str(exc),
-            )
         except HttpClientError as exc:
-            return RequestResultOfVerificationCode(
+            return RequestResultOfVerificationCode (
                 status  = False,
                 phone   = phone,
                 message = str(exc),
@@ -126,11 +129,12 @@ class OfficialServerLogin:
                 headers = headers
             )
 
-            status = result["status"]
+            status = require_int(result.get("status"), "status")
             if status == 0:
-                token = result["data"]["token"]
-                hgId = result["data"]["hgId"]
-                msg = result["msg"]
+                data = require_dict(result.get("data"), "data")
+                token = require_str(data.get("token"), "data.token")
+                hgId = require_str(data.get("hgId"), "data.hgId")
+                msg = require_str(result.get("msg"), "msg")
                 return RequestResultOfAuth (
                     status  = True,
                     phone   = phone,
@@ -139,29 +143,17 @@ class OfficialServerLogin:
                     message = msg
                 )
             else:
-                msg = result["msg"]
+                msg = require_str(result.get("msg"), "msg")
                 return RequestResultOfAuth (
                     status  = False,
                     phone   = phone,
                     message = msg
                 )
-        except RequestTimeoutError as exc:
-            return RequestResultOfAuth (
-                status  = False,
-                phone   = phone,
-                message = "服务器未在 10000ms 内返回数据，请求超时"
-            )
-        except InvalidResponseError as exc:
-            return RequestResultOfAuth (
-                status  = False,
-                phone   = phone,
-                message = "获取到非法 / 不被支持的数据"
-            )
         except HttpClientError as exc:
             return RequestResultOfAuth (
                 status  = False,
                 phone   = phone,
-                message = f"请求失败，错误类型：{exc}"
+                message = str(exc)
             )
 
     async def aget_auth_token(
@@ -216,53 +208,30 @@ class OfficialServerLogin:
                 headers = headers
             )
 
-            if not isinstance(result, dict):
-                return RequestResultOfAccountToken (
-                    status  = False,
-                    phone   = phone,
-                    message = "返回数据格式异常"
-                )
-
-            status = result.get("status")
-            msg = result.get("msg") or result.get("message") or result.get("error")
-            account_token = result.get("data", {}).get("token")
-
-            if status == 0 and account_token:
+            status = require_int(result.get("status"), "status")
+            if status == 0:
+                data = require_dict(result.get("data"), "data")
+                account_token = require_str(data.get("token"), "data.token")
                 return RequestResultOfAccountToken (
                     status       = True,
                     phone        = phone,
                     accountToken = account_token,
-                    message      = msg
+                    message      = _response_message(result, "账号凭证获取成功")
                 )
 
             return RequestResultOfAccountToken (
                 status  = False,
                 phone   = phone,
-                message = msg or f"grant token 获取失败：status={status}, keys=[{', '.join(result.keys())}]"
-            )
-        except RequestTimeoutError as exc:
-            return RequestResultOfAccountToken (
-                status  = False,
-                phone   = phone,
-                message = "服务器未在 10000ms 内返回数据，请求超时"
-            )
-        except InvalidResponseError as exc:
-            return RequestResultOfAccountToken (
-                status  = False,
-                phone   = phone,
-                message = "获取到非法 / 不被支持的数据"
-            )
-        except (KeyError, TypeError):
-            return RequestResultOfAccountToken (
-                status  = False,
-                phone   = phone,
-                message = "返回数据缺少账号凭证字段"
+                message = _response_message(
+                    result,
+                    f"grant token 获取失败：status={status}",
+                )
             )
         except HttpClientError as exc:
             return RequestResultOfAccountToken (
                 status  = False,
                 phone   = phone,
-                message = f"请求失败，错误类型：{exc}"
+                message = str(exc)
             )
 
     async def aget_account_token(

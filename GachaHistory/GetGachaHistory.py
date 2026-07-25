@@ -4,11 +4,24 @@ import asyncio
 from ..GetDoctorInfo.models import RequestResultOfDoctorInfo
 from .models import RequestResultOfPoolList, RequestResultOfGachaHistory
 from ..network.HttpClient import HttpClient
-from ..network.exceptions import (
-    HttpClientError,
-    InvalidResponseError,
-    RequestTimeoutError
+from ..network.exceptions import HttpClientError
+from ..network.validation import (
+    require_bool,
+    require_dict,
+    require_dict_list,
+    require_int,
+    require_optional_str,
+    require_str,
 )
+
+
+def _response_message(result: dict, default: str) -> str:
+    for field in ("msg", "message"):
+        message = require_optional_str(result.get(field), field)
+        if message:
+            return message
+    return default
+
 
 class OfficialGetGachaHistory:
 
@@ -64,10 +77,14 @@ class OfficialGetGachaHistory:
         result = self.http_client.request_json(
             "POST",
             self.BASE_REQUEST_U8_TOKEN_URL,
-            json=payload,
-            headers=headers
+            json    = payload,
+            headers = headers
         )
-        return result.get("data", {}).get("token")
+        status = require_int(result.get("status"), "status")
+        if status != 0:
+            return None
+        data = require_dict(result.get("data"), "data")
+        return require_str(data.get("token"), "data.token")
 
 
     def _get_role_cookie(self, u8_token: str) -> str | None:
@@ -89,10 +106,13 @@ class OfficialGetGachaHistory:
         response = self.http_client.request(
             "POST",
             self.BASE_REQUEST_ROLE_LOGIN_URL,
-            json=payload,
-            headers=headers
+            json    = payload,
+            headers = headers
         )
-        return response.cookies.get("ak-user-center")
+        return require_optional_str(
+            response.cookies.get("ak-user-center"),
+            "cookies.ak-user-center",
+        )
 
 
     def _get_pool_list(
@@ -132,60 +152,36 @@ class OfficialGetGachaHistory:
             result = self.http_client.request_json(
                 "GET",
                 self.BASE_REQUEST_POOL_URL,
-                params={
+                params  = {
                     "uid": uid
                 },
-                headers=headers,
-                cookies=cookies
+                headers = headers,
+                cookies = cookies
             )
 
-            code = result.get("code")
-            if code is None:
-                return RequestResultOfPoolList (
-                    status  = False,
-                    message = result.get("message") or result.get("msg") or "请求失败"
-                )
+            code = require_int(result.get("code"), "code")
 
             if code != 0:
                 return RequestResultOfPoolList (
                     status  = False,
                     code    = code,
-                    message = result.get("msg") or result.get("message") or "请求失败"
+                    message = _response_message(result, "请求失败")
                 )
 
-            pool_list = result.get("data")
-            if not isinstance(pool_list, list):
-                return RequestResultOfPoolList (
-                    status  = False,
-                    code    = code,
-                    message = "卡池列表返回格式异常"
-                )
+            pool_list = require_dict_list(result.get("data"), "data")
+            for index, pool in enumerate(pool_list):
+                require_str(pool.get("id"), f"data[{index}].id")
 
             return RequestResultOfPoolList (
                 status      = True,
-                message     = result.get("msg") or result.get("message") or "请求成功",
+                message     = _response_message(result, "请求成功"),
                 code        = code,
                 pool_list   = pool_list
-            )
-        except RequestTimeoutError as exc:
-            return RequestResultOfPoolList (
-                status  = False,
-                message = "服务器没有在 10000ms 内返回数据，请求超时"
-            )
-        except InvalidResponseError as exc:
-            return RequestResultOfPoolList (
-                status  = False,
-                message = "获取到非法 / 不被支持的数据"
-            )
-        except (KeyError, TypeError, IndexError):
-            return RequestResultOfPoolList (
-                status  = False,
-                message = "返回数据缺少必要字段"
             )
         except HttpClientError as exc:
             return RequestResultOfPoolList (
                 status  = False,
-                message = f"请求失败！错误类型 {exc}"
+                message = str(exc)
             )
 
 
@@ -215,9 +211,11 @@ class OfficialGetGachaHistory:
                 "ak-user-center": role_cookie
             }
             gacha_history = []
+            # 抽卡记录查询游标：tuple(pos, gachaTs)；定位抽卡记录查询偏移量
             cursor = None
             seen_cursors = set()
 
+            # 轮询式请求，维护请求游标，每次根据最后一条记录移动游标，当 hasMore 字段为 False 时跳出循环
             while True:
                 params = {
                     "uid": uid,
@@ -227,57 +225,61 @@ class OfficialGetGachaHistory:
                 if cursor is not None:
                     params["pos"], params["gachaTs"] = cursor
 
+                # 获取抽卡记录，每一页 50 条记录
                 result = self.http_client.request_json(
                     "GET",
                     self.BASE_REQUEST_GACHA_HISTORY_URL,
-                    params=params,
-                    headers=headers,
-                    cookies=cookies
+                    params  = params,
+                    headers = headers,
+                    cookies = cookies
                 )
 
-                code = result.get("code")
-                if code is None:
-                    return RequestResultOfGachaHistory (
-                        status  = False,
-                        message = result.get("msg") or result.get("message") or "请求失败"
-                    )
+                code = require_int(result.get("code"), "code")
+
+                # 调试：输出返回数据
+                # print(result)
 
                 if code != 0:
                     return RequestResultOfGachaHistory (
                         status  = False,
                         code    = code,
-                        message = result.get("msg") or result.get("message") or "请求失败"
+                        message = _response_message(result, "请求失败")
                     )
 
-                data = result.get("data")
-                page_records = data.get("list") if isinstance(data, dict) else None
-                if not isinstance(page_records, list) or not isinstance(data.get("hasMore"), bool):
-                    return RequestResultOfGachaHistory (
-                        status  = False,
-                        code    = code,
-                        message = "抽卡记录返回格式异常"
-                    )
+                data = require_dict(result.get("data"), "data")
+                page_records = require_dict_list(data.get("list"), "data.list")
+                has_more = require_bool(data.get("hasMore"), "data.hasMore")
 
                 gacha_history.extend(page_records)
-                if not data["hasMore"]:
+                if not has_more:
                     break
 
-                cursor_record = next(
-                    (
-                        record
-                        for record in reversed(page_records)
-                        if isinstance(record, dict) and record.get("pos") == 0
-                    ),
-                    None,
-                )
-                if cursor_record is None or cursor_record.get("gachaTs") is None:
+                cursor_record = None
+                for index in range(len(page_records) - 1, -1, -1):
+                    record = page_records[index]
+                    position = require_int(
+                        record.get("pos"),
+                        f"data.list[{index}].pos",
+                    )
+                    if position == 0:
+                        cursor_record = record
+                        break
+
+                if cursor_record is None:
                     return RequestResultOfGachaHistory (
                         status  = False,
                         code    = code,
                         message = "抽卡记录缺少下一页游标"
                     )
 
-                cursor = (cursor_record["pos"], cursor_record["gachaTs"])
+                # 维护下一游标位
+                cursor = (
+                    require_int(cursor_record.get("pos"), "data.list[].pos"),
+                    require_str(
+                        cursor_record.get("gachaTs"),
+                        "data.list[].gachaTs",
+                    ),
+                )
                 if cursor in seen_cursors:
                     return RequestResultOfGachaHistory (
                         status  = False,
@@ -288,29 +290,14 @@ class OfficialGetGachaHistory:
 
             return RequestResultOfGachaHistory (
                 status          = True,
-                message         = result.get("msg") or result.get("message") or "请求成功",
+                message         = _response_message(result, "请求成功"),
                 code            = code,
                 gacha_history   = gacha_history
-            )
-        except RequestTimeoutError as exc:
-            return RequestResultOfGachaHistory (
-                status  = False,
-                message = "服务器没有在 10000ms 内返回数据，请求超时"
-            )
-        except InvalidResponseError as exc:
-            return RequestResultOfGachaHistory (
-                status  = False,
-                message = "获取到非法 / 不被支持的数据"
-            )
-        except (KeyError, TypeError, IndexError):
-            return RequestResultOfGachaHistory (
-                status  = False,
-                message = "返回数据缺少必要字段"
             )
         except HttpClientError as exc:
             return RequestResultOfGachaHistory (
                 status  = False,
-                message = f"请求失败！错误类型 {exc}"
+                message = str(exc)
             )
 
 
@@ -347,58 +334,58 @@ class OfficialGetGachaHistory:
                     status  = False,
                     message = "角色登录失败，请稍后再试"
                 )
-        except RequestTimeoutError as exc:
-            return RequestResultOfGachaHistory (
-                status  = False,
-                message = "服务器没有在 10000ms 内返回数据，请求超时"
-            )
-        except (InvalidResponseError, TypeError) as exc:
-            return RequestResultOfGachaHistory (
-                status  = False,
-                message = "认证接口返回了无效数据"
-            )
         except HttpClientError as exc:
             return RequestResultOfGachaHistory (
                 status  = False,
-                message = f"请求失败！错误类型 {exc}"
+                message = str(exc)
             )
 
         gacha_history = []
         success_message = "请求成功"
 
-        for pool in pool_list:
-            if not isinstance(pool, dict) or not pool.get("id"):
-                return RequestResultOfGachaHistory (
-                    status  = False,
-                    message = "卡池信息缺少必要字段"
+        try:
+            # 遍历获取到的卡池列表，根据对应卡池请求抽卡记录
+            for index, pool in enumerate(pool_list):
+                checked_pool = require_dict(pool, f"pool_list[{index}]")
+                pool_id = require_str(
+                    checked_pool.get("id"),
+                    f"pool_list[{index}].id",
                 )
-            result = self._get_gacha_history_by_pool(
-                user_info,
-                pool.get("id"),
-                u8_token,
-                role_cookie
+                # 指定卡池名称与 ID，请求记录
+                result = self._get_gacha_history_by_pool(
+                    user_info,
+                    pool_id,
+                    u8_token,
+                    role_cookie
+                )
+                if result.status is False:
+                    return RequestResultOfGachaHistory (
+                        status  = False,
+                        message = result.message
+                    )
+                if result.code != 0:
+                    return RequestResultOfGachaHistory (
+                        status  = False,
+                        code    = result.code,
+                        message = result.message
+                    )
+
+                if result.message:
+                    success_message = result.message
+
+                for record_index, record in enumerate(result.gacha_history or []):
+                    # 类型检查：dict
+                    checked_record = require_dict(
+                        record,
+                        f"gacha_history[{record_index}]",
+                    )
+                    checked_record["category"] = pool_id
+                    gacha_history.append(checked_record)
+        except HttpClientError as exc:
+            return RequestResultOfGachaHistory (
+                status  = False,
+                message = str(exc)
             )
-            if result.status is False:
-                return RequestResultOfGachaHistory (
-                    status  = False,
-                    message = result.message
-                )
-            if result.code != 0:
-                return RequestResultOfGachaHistory (
-                    status  = False,
-                    code    = result.code,
-                    message = result.message
-                )
-
-            # 审查问题是最终返回值直接读取循环变量 result，代码依赖最后一次循环一定执行且成功
-            # 每轮成功后显式保存消息，使聚合结果的数据来源清楚并避免循环变量泄漏到返回阶段
-            if result.message:
-                success_message = result.message
-
-            for record in result.gacha_history or []:
-                if isinstance(record, dict):
-                    record["category"] = pool["id"]
-                    gacha_history.append(record)
 
         return RequestResultOfGachaHistory (
             status          = True,
