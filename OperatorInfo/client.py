@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Protocol
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 from .exceptions import (
     OperatorNotFoundError,
@@ -14,11 +14,11 @@ from .exceptions import (
 
 class JsonHttpClient(Protocol):
     def request_json(self, method: str, url: str, **kwargs: Any) -> dict:
-        """发送请求并返回 JSON 对象。"""
+        """发送请求并返回 JSON 对象"""
         ...
 
     def request(self, method: str, url: str, **kwargs: Any) -> Any:
-        """发送请求并返回原始响应对象。"""
+        """发送请求并返回原始响应对象"""
         ...
 
 
@@ -34,10 +34,22 @@ class PrtsPage:
 class PrtsWikiClient:
     API_URL = "https://prts.wiki/api.php"
     PAGE_URL = "https://prts.wiki/w/"
+    USER_AGENT = (
+        "AstrBot-Arknights/1.0 "
+        "(+https://github.com/Bricks0411/astrbot_plugin_for_Arknights)"
+    )
 
-    def __init__(self, http_client: JsonHttpClient):
+    def __init__(
+        self,
+        http_client: JsonHttpClient,
+        *,
+        logger: Any | None = None,
+        bypass_environment_proxy: bool = True,
+    ):
         """初始化类方法"""
         self.http_client = http_client
+        self.logger = logger
+        self.bypass_environment_proxy = bypass_environment_proxy
 
     def get_operator_page(self, name: str) -> PrtsPage:
         """向 prts.wiki 获取原始页面 html 化信息"""
@@ -135,9 +147,21 @@ class PrtsWikiClient:
     def download_image(self, url: str) -> tuple[bytes, str]:
         """封装图片下载逻辑"""
         try:
-            response = self.http_client.request("GET", url, allow_redirects=True)
+            response = self._request_with_proxy_fallback(
+                self.http_client.request,
+                "GET",
+                url,
+                allow_redirects=True,
+                headers={
+                    "User-Agent": self.USER_AGENT,
+                    "Accept": "image/*",
+                },
+            )
         except Exception as exc:
-            raise OperatorResponseError(f"图片下载失败：{type(exc).__name__}") from exc
+            host = urlsplit(url).netloc or "unknown-host"
+            raise OperatorResponseError(
+                f"PRTS 图片下载失败（host={host}）：{type(exc).__name__}: {exc}"
+            ) from exc
         content = response.content
         content_type = response.headers.get("Content-Type", "application/octet-stream").split(";", 1)[0]
         if not content_type.startswith("image/"):
@@ -148,9 +172,75 @@ class PrtsWikiClient:
 
     def _request_json(self, method: str, url: str, **kwargs: Any) -> dict:
         """封装 GET json 逻辑"""
+        request_headers = {
+            "User-Agent": self.USER_AGENT,
+            "Accept": "application/json",
+            **kwargs.pop("headers", {}),
+        }
         try:
-            return self.http_client.request_json(method, url, **kwargs)
+            return self._request_with_proxy_fallback(
+                self.http_client.request_json,
+                method,
+                url,
+                headers=request_headers,
+                **kwargs,
+            )
         except OperatorResponseError:
             raise
         except Exception as exc:
-            raise OperatorResponseError(f"PRTS 请求失败：{type(exc).__name__}") from exc
+            params = kwargs.get("params")
+            operation = "unknown"
+            target = ""
+            if isinstance(params, dict):
+                operation = str(params.get("action") or operation)
+                if params.get("page"):
+                    target = f", page={params['page']!r}"
+                elif params.get("titles"):
+                    target = f", titles={params['titles']!r}"
+            host = urlsplit(url).netloc or "unknown-host"
+            raise OperatorResponseError(
+                "PRTS API 请求失败"
+                f"（method={method}, host={host}, action={operation}{target}）："
+                f"{type(exc).__name__}: {exc}"
+            ) from exc
+
+    def _request_with_proxy_fallback(
+        self,
+        request_method: Any,
+        method: str,
+        url: str,
+        **kwargs: Any,
+    ) -> Any:
+        """
+        PRTS 在部分环境代理下会提前关闭 TLS 连接。
+
+        默认先直连，直连失败时再按 HTTP 客户端原配置（包括环境代理）重试一次。
+        显式传入 proxies 时尊重调用方配置，不自动切换。
+        """
+        if not self.bypass_environment_proxy or "proxies" in kwargs:
+            return request_method(method, url, **kwargs)
+
+        direct_kwargs = dict(kwargs)
+        direct_kwargs["proxies"] = {"http": "", "https": ""}
+        try:
+            return request_method(method, url, **direct_kwargs)
+        except Exception as direct_exc:
+            self._log_retry(
+                "PRTS 直连请求失败，将按 HTTP 客户端代理配置重试"
+                f"（method={method}, host={urlsplit(url).netloc or 'unknown-host'}）",
+                direct_exc,
+            )
+            return request_method(method, url, **kwargs)
+
+    def _log_retry(self, message: str, exc: Exception) -> None:
+        """记录已进入恢复分支的异常 traceback。"""
+        if self.logger is None:
+            return
+        warning_method = getattr(self.logger, "warning", None)
+        if not callable(warning_method):
+            warning_method = getattr(self.logger, "warn", None)
+        if callable(warning_method):
+            warning_method(
+                f"{message}：{type(exc).__name__}: {exc}",
+                exc_info=True,
+            )

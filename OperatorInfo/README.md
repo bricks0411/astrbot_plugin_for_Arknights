@@ -162,6 +162,8 @@ image_url = await self.html_render(
 
 `build_operator_render_data()` 会优先把本地立绘缩放到最大 1000×1000，并压缩为 WebP `data:` URL，避免高清 PNG 令远程 T2I 请求体过大，也避免 HTML 渲染进程无法读取本地文件；本地立绘不存在时才使用远程 URL。原始缓存图片不会被修改。如果公共 T2I 服务仍然拒绝带图请求，`render_operator_card()` 会自动去掉立绘重试，确保基础数值、技能和模组仍可生成图片。
 
+如果两次图片渲染都失败，可调用 `build_operator_text_summary(operator)` 生成受长度限制的真实文本兜底。`get_cached_operator(name, allow_expired=True)` 仅供实时 PRTS 请求失败后的陈旧缓存兜底使用；正常查询仍遵守缓存 TTL。
+
 默认模板为 1800px 横版双栏布局：左侧显示立绘背景、头像和身份信息，右侧显示基础数值、技能与模组。白色为最底层，立绘为中间背景层，半透明数据面板为最上层。
 
 ## 5. `main.py` 指令接入示例

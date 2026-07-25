@@ -6,6 +6,7 @@ from .exceptions import (
     OperatorResponseError,
     OperatorValidationError,
 )
+from .formatter import build_operator_text_summary
 from .models import (
     OperatorAttribute,
     OperatorData,
@@ -36,6 +37,7 @@ __all__ = [
     "OperatorValidationError",
     "OperatorSkill",
     "PrtsWikiClient",
+    "build_operator_text_summary",
     "build_operator_render_data",
     "render_operator_card",
 ]

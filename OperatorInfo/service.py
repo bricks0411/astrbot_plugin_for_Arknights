@@ -6,7 +6,10 @@ import hashlib
 import json
 import mimetypes
 import time
+
 from pathlib import Path
+from typing import Any
+from weakref import WeakValueDictionary
 
 from .client import PrtsWikiClient
 from .exceptions import OperatorValidationError
@@ -25,24 +28,35 @@ class OperatorEncyclopedia:
         *,
         cache_ttl_seconds: int = 24 * 60 * 60,
         download_portrait: bool = True,
+        logger: Any | None = None,
     ):
-        """初始化干员百科服务、缓存策略和并发查询锁。"""
+        """初始化干员百科服务、缓存策略和并发查询锁"""
         self.client = client
         self.parser = PrtsOperatorParser()
         self.cache_dir = Path(cache_dir)
         self.cache_ttl_seconds = max(0, cache_ttl_seconds)
         self.download_portrait = download_portrait
-        self._locks: dict[str, asyncio.Lock] = {}
+        self.logger = logger
+        # 弱引用字典：若某个协程任务正持有 / 等待某把锁，则该锁将一直存在
+        # 所有协程均释放该锁后，对应锁自动消失
+        self._locks: WeakValueDictionary[str, asyncio.Lock] = (
+            WeakValueDictionary()
+        )
 
     async def get_operator(self, name: str, *, force_refresh: bool = False) -> OperatorData:
-        """异步查询干员数据，并合并同名并发请求以复用缓存。"""
+        """异步查询干员数据，并合并同名并发请求以复用缓存"""
         key = self._normalize_name(name)
         lock = self._locks.setdefault(key, asyncio.Lock())
         async with lock:
             if not force_refresh:
                 cached = self._load_cache(key)
                 if cached is not None:
+                    self._log("debug", f"PRTS 缓存命中（operator={key!r}）")
                     return cached
+            self._log(
+                "info",
+                f"PRTS 数据抓取开始（operator={key!r}, force_refresh={force_refresh}）",
+            )
             return await asyncio.to_thread(self._fetch_and_cache, key)
 
     async def query_and_render(
@@ -54,7 +68,7 @@ class OperatorEncyclopedia:
         return_url: bool = True,
         render_options: dict | None = None,
     ) -> str:
-        """查询干员数据并通过 AstrBot html_render() 直接生成图片。"""
+        """查询干员数据并通过 AstrBot html_render() 直接生成图片"""
         operator = await self.get_operator(name, force_refresh=force_refresh)
         return await render_operator_card(
             renderer,
@@ -64,7 +78,7 @@ class OperatorEncyclopedia:
         )
 
     def get_operator_sync(self, name: str, *, force_refresh: bool = False) -> OperatorData:
-        """同步查询干员数据，并按需读取或刷新缓存。"""
+        """同步查询干员数据，并按需读取或刷新缓存"""
         key = self._normalize_name(name)
         if not force_refresh:
             cached = self._load_cache(key)
@@ -72,12 +86,29 @@ class OperatorEncyclopedia:
                 return cached
         return self._fetch_and_cache(key)
 
+    def get_cached_operator(
+        self,
+        name: str,
+        *,
+        allow_expired: bool = False,
+    ) -> OperatorData | None:
+        """读取 PRTS 本地缓存；请求失败后的文本兜底可显式允许过期数据。"""
+        key = self._normalize_name(name)
+        return self._load_cache(key, allow_expired=allow_expired)
+
     def _fetch_and_cache(self, name: str) -> OperatorData:
         """
         获取 html 页面、干员立绘和头像，并执行缓存逻辑
         """
+        started_at = time.monotonic()
         # 根据干员名获取 html 页面
         page = self.client.get_operator_page(name)
+        self._log(
+            "debug",
+            "PRTS 页面获取成功"
+            f"（operator={name!r}, title={page.title!r}, revision_id={page.revision_id}, "
+            f"images={len(page.images)}）",
+        )
         # 初始化立绘、头像 URL
         portrait_url: str | None = None
         avatar_url: str | None = None
@@ -88,12 +119,20 @@ class OperatorEncyclopedia:
         try:
             portrait_url = self.client.resolve_portrait_url(page.title, page.images)
         except Exception as exc:
+            self._log_exception(
+                f"PRTS 立绘地址解析失败（operator={page.title!r}）",
+                exc,
+            )
             image_warning = f"立绘地址解析失败：{type(exc).__name__}"
 
         # 获取头像 URL
         try:
             avatar_url = self.client.resolve_avatar_url(page.title, page.images)
         except Exception as exc:
+            self._log_exception(
+                f"PRTS 头像地址解析失败（operator={page.title!r}）",
+                exc,
+            )
             image_warning = self._join_warning(
                 image_warning,
                 f"头像地址解析失败：{type(exc).__name__}",
@@ -109,6 +148,10 @@ class OperatorEncyclopedia:
                 content, mime = self.client.download_image(portrait_url)
                 operator.portrait_path = str(self._save_portrait(operator.name, content, mime))
             except Exception as exc:
+                self._log_exception(
+                    f"PRTS 立绘下载或缓存失败（operator={operator.name!r}）",
+                    exc,
+                )
                 # 审查问题是下载失败后仍保留同一个远程地址，渲染器会再次请求已确认不可用的资源
                 # 下载失败时清除远程地址，确保渲染器直接进入无立绘降级路径并避免重复失败
                 operator.portrait_url = None
@@ -122,6 +165,10 @@ class OperatorEncyclopedia:
                 content, mime = self.client.download_image(avatar_url)
                 operator.avatar_path = str(self._save_image(operator.name, "avatars", content, mime))
             except Exception as exc:
+                self._log_exception(
+                    f"PRTS 头像下载或缓存失败（operator={operator.name!r}）",
+                    exc,
+                )
                 # 头像与立绘使用相同的本地优先渲染规则，下载失败时也不能保留已失效的远程回退
                 # 清除地址后仍保留百科文本数据和告警信息，不让非关键图片阻断整次查询
                 operator.avatar_url = None
@@ -133,16 +180,53 @@ class OperatorEncyclopedia:
         canonical_key = self._normalize_name(operator.name)
         if canonical_key != name:
             self._save_cache(canonical_key, operator)
+        elapsed_ms = round((time.monotonic() - started_at) * 1000)
+        self._log(
+            "info",
+            f"PRTS 数据抓取完成（operator={operator.name!r}, elapsed_ms={elapsed_ms}, "
+            f"warnings={len(operator.warnings)}）",
+        )
         return operator
 
-    def _load_cache(self, name: str) -> OperatorData | None:
+    def _log(self, level: str, message: str) -> None:
+        """仅为 PRTS 请求链提供可选日志，不强制模块依赖 AstrBot。"""
+        if self.logger is None:
+            return
+        log_method = getattr(self.logger, level, None)
+        if callable(log_method):
+            log_method(message)
+
+    def _log_exception(self, message: str, exc: Exception) -> None:
+        """记录当前异常的完整 traceback，并兼容没有 exception() 的日志器。"""
+        if self.logger is None:
+            return
+        exception_method = getattr(self.logger, "exception", None)
+        if callable(exception_method):
+            exception_method(f"{message}：{type(exc).__name__}: {exc}")
+            return
+        error_method = getattr(self.logger, "error", None)
+        if callable(error_method):
+            error_method(
+                f"{message}：{type(exc).__name__}: {exc}",
+                exc_info=True,
+            )
+
+    def _load_cache(
+        self,
+        name: str,
+        *,
+        allow_expired: bool = False,
+    ) -> OperatorData | None:
         """加载缓存"""
         path = self._data_cache_path(name)
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
             if payload.get("cache_version") != self.CACHE_VERSION:
                 return None
-            if time.time() - float(payload["cached_at"]) > self.cache_ttl_seconds:
+            if (
+                not allow_expired
+                and time.time() - float(payload["cached_at"]) > self.cache_ttl_seconds
+            ):
                 return None
             return OperatorData.from_dict(payload["operator"])
         except (OSError, ValueError, KeyError, TypeError):
