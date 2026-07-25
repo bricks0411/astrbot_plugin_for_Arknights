@@ -2,6 +2,7 @@
 import time
 import asyncio
 
+from functools import wraps
 from pathlib import Path
 
 from astrbot.api.event import filter, AstrMessageEvent
@@ -20,7 +21,10 @@ from .OperatorInfo import (
     OperatorEncyclopedia,
     OperatorInfoError,
     OperatorNotFoundError,
+    OperatorResponseError,
     PrtsWikiClient,
+    build_operator_text_summary,
+    render_operator_card,
 )
 from .analysis.GachaHistoryT2I import (
     GACHA_STATISTICS_RENDER_OPTIONS,
@@ -29,6 +33,23 @@ from .analysis.GachaHistoryT2I import (
 from .GetDoctorInfo.models import RequestResultOfDoctorInfo
 
 PLUGIN_NAME = "astrbot_plugin_for_Arknights"
+
+
+def command_error_boundary(command_name: str):
+    """在 AstrBot 命令最外层记录未预期异常，并给用户稳定提示。"""
+    def decorate(command):
+        @wraps(command)
+        async def wrapped(self, event: AstrMessageEvent, *args, **kwargs):
+            try:
+                async for result in command(self, event, *args, **kwargs):
+                    yield result
+            except Exception:
+                logger.exception(f"执行 AstrBot 命令“{command_name}”时发生未处理异常")
+                yield event.plain_result("插件内部发生错误")
+
+        return wrapped
+    return decorate
+
 
 @register(
     "Arknights",
@@ -64,10 +85,11 @@ class ArknightsChecker(Star):
             self._build_avatar_cache_path()
         )
         self.operator_encyclopedia = OperatorEncyclopedia(
-            PrtsWikiClient(self.http_client),
+            PrtsWikiClient(self.http_client, logger=logger),
             self._build_operator_info_cache_path(),
             cache_ttl_seconds   = 24 * 60 * 60,
-            download_portrait   = True
+            download_portrait   = True,
+            logger              = logger,
         )
 
         # 官服内存信息维护
@@ -205,6 +227,7 @@ class ArknightsChecker(Star):
 
     @filter.command("官服验证码")
     @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
+    @command_error_boundary("官服验证码")
     async def GetAndSendVerificationCodeWithOfficialServer(self, event: AstrMessageEvent):
         """收集用户给出的手机验证码，交由服务器进行校验"""
         user_id = event.get_sender_id()
@@ -282,13 +305,14 @@ class ArknightsChecker(Star):
         await asyncio.sleep(1)
         yield event.plain_result(f"欢迎，Dr. {doctor_name}")
         await asyncio.sleep(1)
-        yield event.plain_result("若这是你第一次登录，请根据账号所在的服务器种类，使用 /官服抽卡记录更新 或 /B服抽卡记录更新 指令同步数据（目前仅支持官服）")
+        yield event.plain_result("若这是你第一次登录，请根据账号所在的服务器种类，使用 /官服抽卡记录更新 或 /B服抽卡记录更新 指令同步抽卡记录数据（目前仅支持官服）")
         self.PopPendingMessage(self.OFFICIAL, user_id)
 
 
     @filter.command("方舟官服登录")
     # 消息类型过滤器：仅允许私聊触发该指令
     @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
+    @command_error_boundary("方舟官服登录")
     async def LoginByOfficialServer(self, event: AstrMessageEvent):
         """通过官服渠道登录，调用官服登录器执行登录操作，仅允许私聊绑定"""
         user_id = event.get_sender_id()
@@ -322,6 +346,7 @@ class ArknightsChecker(Star):
     @filter.command("方舟B服登录", alias = {"方舟b服登录", "方舟逼服登录"})
     # 消息类型过滤器，仅允许私聊触发该指令
     @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
+    @command_error_boundary("方舟B服登录")
     async def LoginByBilibiliServer(self, event: AstrMessageEvent):
         """通过 B 站服登录，调用 B 站 api 执行登录操作，仅允许私聊绑定，目前暂未实现"""
         user_id = event.get_sender_id()
@@ -330,6 +355,7 @@ class ArknightsChecker(Star):
 
 
     @filter.command("官服抽卡记录更新")
+    @command_error_boundary("官服抽卡记录更新")
     async def UpdateGachaHistory(self, event: AstrMessageEvent):
         """实现抽卡记录持久化存储，查询近 90 天内记录存储至本地"""
         user_id = event.get_sender_id()
@@ -337,6 +363,12 @@ class ArknightsChecker(Star):
         if not user_info:
             logger.info(f"用户 {user_id} 没有可用的登录凭证：{credential_error}")
             yield event.plain_result("请先登录官服账号")
+            await asyncio.sleep(0.5)
+            yield event.plain_result(
+                "添加 bot 好友后，私聊使用 /方舟官服登录 或 /方舟B服登录 指令获取验证码\n"
+                "之后使用 /官服验证码 <验证码> 或 /B服验证码 <验证码> 指令登录\n"
+                "目前仅支持官服"
+            )
             return
 
         # 获取卡池种类，随后按种类分页获取全部抽卡记录。
@@ -357,16 +389,28 @@ class ArknightsChecker(Star):
             pool_list,
         )
 
+        # 调试：输出服务器返回数据
+        # logger.info(gacha_history_result.gacha_history)
+
         if gacha_history_result.status is False:
             logger.warn(gacha_history_result.message)
             if self.IsCredentialInvalid(gacha_history_result.message):
                 yield event.plain_result("登录凭证已失效，请重新登录官服账号")
+                await asyncio.sleep(0.5)
+                yield event.plain_result(
+                    "添加 bot 好友后，私聊使用 /方舟官服登录 或 /方舟B服登录 指令获取验证码\n"
+                    "之后使用 /官服验证码 <验证码> 或 /B服验证码 <验证码> 指令登录\n"
+                    "目前仅支持官服"
+                )
                 return
+            # 这里 AI 的选择是直接输出错误消息，虽然便于定位问题，但有些过于“技术化”了。先保留吧
             yield event.plain_result(gacha_history_result.message)
             return
 
         gacha_history = gacha_history_result.gacha_history or []
-        logger.info(f"请求成功，服务器返回 {len(gacha_history)} 条数据")
+        # 服务器返回的“前 90 天内”的抽卡记录数可能大于数据库中存储的抽卡记录数
+        # 因为服务器返回的数据并未经过去重，可能存在重复记录，不属于 bug
+        logger.info(f"请求成功，服务器返回 {len(gacha_history)} 条未去重数据")
         data_update_result = await self.data_storage_handler.aupdate_gacha_history(
             gacha_history,
             user_info
@@ -379,9 +423,12 @@ class ArknightsChecker(Star):
 
         logger.info(data_update_result.message)
         yield event.plain_result("已更新近 90 天内的抽卡记录")
+        await asyncio.sleep(0.7)
+        yield event.plain_result("为保证抽卡数据正确，请在今后 90 天内至少更新一次，否则会影响数据一致性")
 
 
     @filter.command("官服抽卡记录查询")
+    @command_error_boundary("官服抽卡记录查询")
     async def GetGachaHistory(self, event: AstrMessageEvent):
         """读取本地抽卡记录并生成统计图片，渲染失败时使用文本兜底。"""
         user_id = event.get_sender_id()
@@ -406,6 +453,8 @@ class ArknightsChecker(Star):
             yield event.plain_result("抽卡记录中的时间或位置字段格式异常")
             return
 
+        # 数据库中存储的抽卡记录数可能小于服务器返回的“前 90 天内”的抽卡记录数
+        # 因为服务器返回的数据并未经过去重，可能存在重复记录，不属于 bug
         logger.info(f"查询到 {len(gacha_history)} 条抽卡记录")
         fallback_text = self.gacha_history_analyser.build_text_summary(statistics)
         try:
@@ -415,12 +464,13 @@ class ArknightsChecker(Star):
                 options = GACHA_STATISTICS_RENDER_OPTIONS,
             )
             yield event.image_result(image_url)
-        except Exception as exc:
-            logger.error(f"抽卡统计图片渲染失败，回退到文本：{exc}")
+        except Exception:
+            logger.exception("抽卡统计图片渲染失败，回退到文本")
             yield event.plain_result(fallback_text)
 
 
     @filter.command("干员百科")
+    @command_error_boundary("干员百科")
     async def GetOperatorInfo(self, event: AstrMessageEvent):
         """通过 prts.wiki 获取干员百科信息"""
         messages = event.get_messages()
@@ -434,22 +484,61 @@ class ArknightsChecker(Star):
         operator_name = args[1]
         logger.info(f"解析到干员名：{operator_name}")
         try:
-            image_url = await self.operator_encyclopedia.query_and_render(
-                self,
-                operator_name
-            )
-            logger.info(f"获取到图片 URL：{image_url}")
-            yield event.image_result(image_url)
+            operator = await self.operator_encyclopedia.get_operator(operator_name)
         except OperatorNotFoundError:
             logger.warn(f"PRTS 中没有找到干员：{operator_name}")
             yield event.plain_result(f"PRTS 中没有找到干员：{operator_name}")
+            return
+        except OperatorResponseError as exc:
+            logger.exception(
+                f"PRTS 数据请求失败（operator={operator_name!r}）："
+                f"{type(exc).__name__}: {exc}"
+            )
+            cached = self.operator_encyclopedia.get_cached_operator(
+                operator_name,
+                allow_expired=True,
+            )
+            if cached is not None:
+                logger.warn(
+                    f"PRTS 实时请求失败，使用本地缓存文本兜底"
+                    f"（operator={operator_name!r}）"
+                )
+                fallback_text = build_operator_text_summary(cached)
+                yield event.plain_result(
+                    "PRTS 实时数据请求失败，以下为本地缓存数据：\n\n"
+                    + fallback_text
+                )
+            else:
+                yield event.plain_result(
+                    "PRTS 数据请求失败，且本地没有可用缓存，请稍后重试"
+                )
+            return
         except OperatorInfoError as exc:
-            logger.warn(f"干员百科查询失败：{exc}")
+            logger.exception(
+                f"PRTS 干员百科查询失败（operator={operator_name!r}）："
+                f"{type(exc).__name__}: {exc}"
+            )
             yield event.plain_result(f"干员百科查询失败：{exc}")
+            return
         except Exception as exc:
-            logger.error(f"干员百科图片渲染失败：{exc}")
-            yield event.plain_result("干员数据获取成功，但图片渲染失败，退回至文本数据")
+            logger.exception(
+                f"PRTS 干员数据处理发生未预期异常（operator={operator_name!r}）："
+                f"{type(exc).__name__}: {exc}"
+            )
+            yield event.plain_result("干员百科查询失败，请稍后重试")
+            return
 
+        fallback_text = build_operator_text_summary(operator)
+        try:
+            image_url = await render_operator_card(self, operator)
+            logger.info(f"获取到图片 URL：{image_url}")
+            yield event.image_result(image_url)
+        except Exception as exc:
+            logger.exception(
+                f"干员百科图片渲染失败，发送文本兜底（operator={operator_name!r}）："
+                f"{type(exc).__name__}: {exc}"
+            )
+            yield event.plain_result(fallback_text)
 
 
     async def terminate(self):

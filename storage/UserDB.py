@@ -206,6 +206,8 @@ class DataStorageHandler:
                 )
                 for gacha in gacha_history
             ]
+            # 调试：输出列表长度
+            print(f"size of params: {len(params)}")
         except (KeyError, TypeError) as exc:
             return ReturnResultOfDatabaseOperation (
                 status=False,
@@ -217,6 +219,9 @@ class DataStorageHandler:
                 status  = True,
                 message = "没有需要更新的抽卡记录",
             )
+
+        # 调试：输出列表长度
+        # print(f"size of params: {len(params)}")
 
         try:
             with self._lock:
