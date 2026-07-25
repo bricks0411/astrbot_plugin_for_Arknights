@@ -1,17 +1,11 @@
-import sys
 import unittest
-from pathlib import Path
 
-PLUGIN_PARENT = Path(__file__).resolve().parents[2]
-if str(PLUGIN_PARENT) not in sys.path:
-    sys.path.insert(0, str(PLUGIN_PARENT))
-
-from astrbot_plugin_for_Arknights.LoginTools.OfficialServerLogin import OfficialServerLogin
-from astrbot_plugin_for_Arknights.network.exceptions import (
+from ..LoginTools.OfficialServerLogin import OfficialServerLogin
+from ..network.exceptions import (
     InvalidResponseError,
     NetworkRequestError,
 )
-from astrbot_plugin_for_Arknights.network.validation import (
+from ..network.validation import (
     require_bool,
     require_dict,
     require_dict_list,
@@ -19,7 +13,6 @@ from astrbot_plugin_for_Arknights.network.validation import (
     require_list,
     require_str,
 )
-
 
 class _StubHttpClient:
 

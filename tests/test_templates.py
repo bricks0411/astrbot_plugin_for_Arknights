@@ -1,16 +1,9 @@
-import sys
 import unittest
-from pathlib import Path
 
-
-PLUGIN_PARENT = Path(__file__).resolve().parents[2]
-if str(PLUGIN_PARENT) not in sys.path:
-    sys.path.insert(0, str(PLUGIN_PARENT))
-
-from astrbot_plugin_for_Arknights.OperatorInfo.renderer import (
+from ..OperatorInfo.renderer import (
     OPERATOR_INFO_TEMPLATE,
 )
-from astrbot_plugin_for_Arknights.analysis.GachaHistoryT2I import (
+from ..analysis.GachaHistoryT2I import (
     GACHA_STATISTICS_TEMPLATE,
 )
 

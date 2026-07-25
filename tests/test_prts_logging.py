@@ -1,28 +1,21 @@
 import json
-import sys
 import tempfile
 import time
 import unittest
-from pathlib import Path
 
-
-PLUGIN_PARENT = Path(__file__).resolve().parents[2]
-if str(PLUGIN_PARENT) not in sys.path:
-    sys.path.insert(0, str(PLUGIN_PARENT))
-
-from astrbot_plugin_for_Arknights.OperatorInfo.client import PrtsWikiClient
-from astrbot_plugin_for_Arknights.OperatorInfo.exceptions import OperatorResponseError
-from astrbot_plugin_for_Arknights.OperatorInfo.formatter import (
+from ..OperatorInfo.client import PrtsWikiClient
+from ..OperatorInfo.exceptions import OperatorResponseError
+from ..OperatorInfo.formatter import (
     build_operator_text_summary,
 )
-from astrbot_plugin_for_Arknights.OperatorInfo.models import (
+from ..OperatorInfo.models import (
     OperatorAttribute,
     OperatorData,
     OperatorModule,
     OperatorModuleLevel,
     OperatorSkill,
 )
-from astrbot_plugin_for_Arknights.OperatorInfo.service import OperatorEncyclopedia
+from ..OperatorInfo.service import OperatorEncyclopedia
 
 
 class _FailingHttpClient:

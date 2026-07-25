@@ -2,7 +2,6 @@ import asyncio
 import gc
 import unittest
 import sqlite3
-import sys
 import tempfile
 import weakref
 from pathlib import Path
@@ -10,16 +9,12 @@ from unittest.mock import patch
 
 from bs4 import BeautifulSoup
 
-PLUGIN_PARENT = Path(__file__).resolve().parents[2]
-if str(PLUGIN_PARENT) not in sys.path:
-    sys.path.insert(0, str(PLUGIN_PARENT))
-
-from astrbot_plugin_for_Arknights.OperatorInfo.client import PrtsPage
-from astrbot_plugin_for_Arknights.OperatorInfo.exceptions import OperatorValidationError
-from astrbot_plugin_for_Arknights.OperatorInfo.models import OperatorData
-from astrbot_plugin_for_Arknights.OperatorInfo.parser import PrtsOperatorParser
-from astrbot_plugin_for_Arknights.OperatorInfo.service import OperatorEncyclopedia
-from astrbot_plugin_for_Arknights.storage.UserDB import DataStorageHandler
+from ..OperatorInfo.client import PrtsPage
+from ..OperatorInfo.exceptions import OperatorValidationError
+from ..OperatorInfo.models import OperatorData
+from ..OperatorInfo.parser import PrtsOperatorParser
+from ..OperatorInfo.service import OperatorEncyclopedia
+from ..storage.UserDB import DataStorageHandler
 
 
 class OperatorInfoRegressionTests(unittest.TestCase):
