@@ -1,3 +1,4 @@
+# OperatorInfo/formatter.py
 from __future__ import annotations
 
 from .models import OperatorData
