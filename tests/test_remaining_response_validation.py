@@ -199,13 +199,13 @@ class GachaHistoryValidationTests(unittest.TestCase):
         self.assertFalse(result.status)
         self.assertIn("hasMore", result.message)
 
-    def test_pagination_uses_checked_integer_cursor(self):
+    def test_pagination_uses_checked_cursor_fields(self):
         http_client = _JsonStub([
             {
                 "code": 0,
                 "msg": "",
                 "data": {
-                    "list": [{"pos": 0, "gachaTs": 123456}],
+                    "list": [{"pos": 0, "gachaTs": "123456"}],
                     "hasMore": True,
                 },
             },
@@ -227,7 +227,7 @@ class GachaHistoryValidationTests(unittest.TestCase):
         self.assertTrue(result.status)
         second_params = http_client.requests[1][2]["params"]
         self.assertEqual(second_params["pos"], 0)
-        self.assertEqual(second_params["gachaTs"], 123456)
+        self.assertEqual(second_params["gachaTs"], "123456")
 
     def test_network_errors_share_http_client_error_path(self):
         http_client = _JsonStub([NetworkRequestError("网络连接失败")])
