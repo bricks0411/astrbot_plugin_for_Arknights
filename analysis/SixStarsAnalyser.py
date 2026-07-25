@@ -107,7 +107,7 @@ class GachaHistoryAnalyser:
     @staticmethod
     def _next_six_star_rate(pulls: int) -> float:
         """计算当前垫抽数下下一抽获得六星的概率。"""
-        return float(max(2, 2 * (pulls - 50)))
+        return float(min(100, max(2, 2 * (pulls - 48))))
 
     def _build_statistics(
         self,
