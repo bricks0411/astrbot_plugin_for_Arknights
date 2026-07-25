@@ -1,9 +1,19 @@
+import sys
 import unittest
+from pathlib import Path
 
-from ..GachaHistory.GetGachaHistory import OfficialGetGachaHistory
-from ..GetDoctorInfo.OfficialDoctorInfoHandler import OfficialDoctorInfoHandler
-from ..GetDoctorInfo.models import RequestResultOfDoctorInfo
-from ..network.exceptions import NetworkRequestError
+PLUGIN_PARENT = Path(__file__).resolve().parents[2]
+if str(PLUGIN_PARENT) not in sys.path:
+    sys.path.insert(0, str(PLUGIN_PARENT))
+
+from astrbot_plugin_for_Arknights.GachaHistory.GetGachaHistory import (
+    OfficialGetGachaHistory,
+)
+from astrbot_plugin_for_Arknights.GetDoctorInfo.OfficialDoctorInfoHandler import (
+    OfficialDoctorInfoHandler,
+)
+from astrbot_plugin_for_Arknights.GetDoctorInfo.models import RequestResultOfDoctorInfo
+from astrbot_plugin_for_Arknights.network.exceptions import NetworkRequestError
 
 
 class _JsonStub:
