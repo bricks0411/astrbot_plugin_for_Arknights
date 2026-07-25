@@ -40,7 +40,7 @@ class OfficialServerLogin:
 
     def _get_verification_code(
         self,
-        phone: str | int
+        phone: str
     ) -> RequestResultOfVerificationCode:
         """验证码获取逻辑"""
         if not phone:
@@ -93,7 +93,7 @@ class OfficialServerLogin:
 
     async def aget_verification_code(
         self,
-        phone: str | int
+        phone: str
     ) -> RequestResultOfVerificationCode | None:
         """创建单独线程执行验证码获取逻辑，并将数据返回给 main.py"""
         return await asyncio.to_thread (
@@ -103,7 +103,7 @@ class OfficialServerLogin:
 
     def _get_auth_token(
         self,
-        phone: str | int,
+        phone: str,
         verification_code: str | int
     ) -> RequestResultOfAuth:
         """通过验证码登录"""
@@ -158,7 +158,7 @@ class OfficialServerLogin:
 
     async def aget_auth_token(
         self,
-        phone: str | int,
+        phone: str,
         verification_code: str | int
     ) -> RequestResultOfAuth:
         """创建单独线程执行验证码登录逻辑，并将数据返回给 main.py"""
@@ -171,7 +171,7 @@ class OfficialServerLogin:
     def _get_account_token(
         self,
         login_token: str,
-        phone: str | int
+        phone: str
     ) -> RequestResultOfAccountToken:
         """使用验证码登录 token 换取账号系统凭证"""
         if not login_token:
@@ -237,7 +237,7 @@ class OfficialServerLogin:
     async def aget_account_token(
         self,
         login_token: str,
-        phone: str | int
+        phone: str
     ) -> RequestResultOfAccountToken:
         """创建单独线程执行账号凭证获取逻辑，并将数据返回给 main.py"""
         return await asyncio.to_thread (

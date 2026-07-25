@@ -177,18 +177,25 @@ class PrtsOperatorParser:
     def _parse_skills(self, soup: BeautifulSoup) -> list[OperatorSkill]:
         """解析干员技能区块中的全部技能。"""
         heading = soup.find(id="技能")
-        if not heading:
+        if not isinstance(heading, Tag):
             return []
         result: list[OperatorSkill] = []
         node = heading.parent
+        if not isinstance(node, Tag):
+            return []
         while True:
-            node = node.find_next_sibling()
-            if node is None or node.name == "h2":
+            sibling = node.find_next_sibling()
+            if sibling is None:
                 break
+            if not isinstance(sibling, Tag):
+                break
+            if sibling.name == "h2":
+                break
+            node = sibling
             if node.name != "p" or "技能" not in self._clean_text(node):
                 continue
             table = node.find_next_sibling("table")
-            if not table or "nomobile" not in table.get("class", []):
+            if not isinstance(table, Tag) or "nomobile" not in table.get("class", []):
                 continue
             skill = self._parse_skill_table(node, table)
             if skill:
@@ -198,7 +205,7 @@ class PrtsOperatorParser:
     def _parse_skill_table(self, label: Tag, table: Tag) -> OperatorSkill | None:
         """从单个技能标题和表格中提取技能详情。"""
         first_row = table.find("tr")
-        if not first_row:
+        if not isinstance(first_row, Tag):
             return None
         big = first_row.find("big")
         name = self._clean_text(big) if big else ""
@@ -234,6 +241,7 @@ class PrtsOperatorParser:
             return None
         trailing = [self._clean_text(cell) or None for cell in cells[-3:]] if len(cells) >= 5 else [None] * 3
         icon = first_row.find("img")
+        icon_src = icon.get("src") if isinstance(icon, Tag) else None
         return OperatorSkill(
             name=name,
             description=self._clean_text(cells[1]),
@@ -243,15 +251,17 @@ class PrtsOperatorParser:
             initial_sp=trailing[0],
             sp_cost=trailing[1],
             duration=trailing[2],
-            icon_url=self._absolute_url(icon.get("src")) if icon else None,
+            icon_url=self._absolute_url(icon_src if isinstance(icon_src, str) else None),
         )
 
     def _parse_modules(self, soup: BeautifulSoup) -> list[OperatorModule]:
         """解析干员模组及各阶段的属性和效果。"""
         heading = soup.find(id="模组")
-        if not heading:
+        if not isinstance(heading, Tag):
             return []
         section = heading.parent
+        if not isinstance(section, Tag):
+            return []
         result: list[OperatorModule] = []
         for template in section.find_all_next(class_="equiptemplate"):
             previous_h2 = template.find_previous("h2")
