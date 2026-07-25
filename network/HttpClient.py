@@ -17,11 +17,13 @@ class HttpClient:
     def __init__(
         self,
         timeout: int = DEFAULT_TIMEOUT,
-        user_agent: str = DEFAULT_USER_AGENT
+        user_agent: str = DEFAULT_USER_AGENT,
+        reuse_connections: bool = False,
     ):
         """初始化统一 HTTP 客户端的超时时间和 User-Agent"""
         self.timeout = timeout
         self.user_agent = user_agent
+        self.session = requests.Session() if reuse_connections else None
 
     def request(
         self,
@@ -34,11 +36,16 @@ class HttpClient:
         """发送 HTTP 请求，并将 requests 异常转换为项目统一异常"""
         request_headers = {
             "User-Agent": self.user_agent,
-            **(headers or {})
+            **(headers or {}),
         }
+        request_method = (
+            self.session.request
+            if self.session is not None
+            else requests.request
+        )
 
         try:
-            response = requests.request(
+            response = request_method(
                 method  = method,
                 url     = url,
                 headers = request_headers,
@@ -85,3 +92,22 @@ class HttpClient:
             )
         
         return result
+
+    def close(self) -> None:
+        """关闭 Session 及其连接池。"""
+        if self.session is not None:
+            self.session.close()
+
+    def temporary_session(self) -> "HttpClient":
+        """创建继承当前配置、由调用方及时关闭的临时连接池客户端。"""
+        return HttpClient(
+            timeout=self.timeout,
+            user_agent=self.user_agent,
+            reuse_connections=True,
+        )
+
+    def __enter__(self) -> "HttpClient":
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        self.close()

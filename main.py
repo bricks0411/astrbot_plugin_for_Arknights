@@ -68,10 +68,14 @@ class ArknightsChecker(Star):
     CHECK_TTL_INTERVAL = 60
 
     def __init__(self, context: Context):
-        """初始化插件依赖、功能服务和用户会话状态。"""
+        """初始化插件依赖、功能服务和用户会话状态"""
         super().__init__(context)
         # 各类功能模块
-        self.http_client = HttpClient(timeout = 10)                                                       # 统一化 HTTP 客户端
+        self.http_client = HttpClient(timeout = 10)                                                       # 鹰角请求不复用连接
+        self.prts_http_client = HttpClient(
+            timeout             = 10,
+            reuse_connections   = True,
+        )                                                                                                # PRTS 专用连接池
         self.official_server_login = OfficialServerLogin(
             self.http_client
         )
@@ -85,7 +89,7 @@ class ArknightsChecker(Star):
             self._build_avatar_cache_path()
         )
         self.operator_encyclopedia = OperatorEncyclopedia(
-            PrtsWikiClient(self.http_client, logger=logger),
+            PrtsWikiClient(self.prts_http_client, logger=logger),
             self._build_operator_info_cache_path(),
             cache_ttl_seconds   = 24 * 60 * 60,
             download_portrait   = True,
@@ -114,13 +118,13 @@ class ArknightsChecker(Star):
 
 
     def _build_avatar_cache_path(self) -> Path:
-        """构造永久干员头像缓存目录。"""
+        """构造永久干员头像缓存目录"""
         plugin_data_dir = Path(get_astrbot_data_path()) / "plugin_data" / PLUGIN_NAME
         return plugin_data_dir / "avatar_cache"
 
 
     def _build_operator_info_cache_path(self) -> Path:
-        """构造干员百科数据及立绘缓存目录。"""
+        """构造干员百科数据及立绘缓存目录"""
         plugin_data_dir = Path(get_astrbot_data_path()) / "plugin_data" / PLUGIN_NAME
         return plugin_data_dir / "operator_info_cache"
 
@@ -551,4 +555,8 @@ class ArknightsChecker(Star):
             except asyncio.CancelledError:
                 pass
         # 关闭数据库连接
-        await self.data_storage_handler.aclose()
+        try:
+            await self.data_storage_handler.aclose()
+        finally:
+            self.http_client.close()
+            self.prts_http_client.close()

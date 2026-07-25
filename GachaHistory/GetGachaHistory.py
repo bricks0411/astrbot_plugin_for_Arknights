@@ -205,6 +205,7 @@ class OfficialGetGachaHistory:
     ) -> RequestResultOfGachaHistory:
         """按照卡池种类分页获取全部抽卡记录。"""
         uid = user_info.uid
+        page_http_client = self.http_client.temporary_session()
         try:
             headers = self._authorized_headers(u8_token)
             cookies = {
@@ -226,7 +227,7 @@ class OfficialGetGachaHistory:
                     params["pos"], params["gachaTs"] = cursor
 
                 # 获取抽卡记录，每一页 50 条记录
-                result = self.http_client.request_json(
+                result = page_http_client.request_json(
                     "GET",
                     self.BASE_REQUEST_GACHA_HISTORY_URL,
                     params  = params,
@@ -299,6 +300,8 @@ class OfficialGetGachaHistory:
                 status  = False,
                 message = str(exc)
             )
+        finally:
+            page_http_client.close()
 
 
     def _get_gacha_history(

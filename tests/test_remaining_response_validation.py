@@ -1,19 +1,13 @@
-import sys
 import unittest
-from pathlib import Path
 
-PLUGIN_PARENT = Path(__file__).resolve().parents[2]
-if str(PLUGIN_PARENT) not in sys.path:
-    sys.path.insert(0, str(PLUGIN_PARENT))
-
-from astrbot_plugin_for_Arknights.GachaHistory.GetGachaHistory import (
+from ..GachaHistory.GetGachaHistory import (
     OfficialGetGachaHistory,
 )
-from astrbot_plugin_for_Arknights.GetDoctorInfo.OfficialDoctorInfoHandler import (
+from ..GetDoctorInfo.OfficialDoctorInfoHandler import (
     OfficialDoctorInfoHandler,
 )
-from astrbot_plugin_for_Arknights.GetDoctorInfo.models import RequestResultOfDoctorInfo
-from astrbot_plugin_for_Arknights.network.exceptions import NetworkRequestError
+from ..GetDoctorInfo.models import RequestResultOfDoctorInfo
+from ..network.exceptions import NetworkRequestError
 
 
 class _JsonStub:
@@ -21,6 +15,15 @@ class _JsonStub:
     def __init__(self, responses):
         self.responses = list(responses)
         self.requests = []
+        self.temporary_session_calls = 0
+        self.close_calls = 0
+
+    def temporary_session(self):
+        self.temporary_session_calls += 1
+        return self
+
+    def close(self):
+        self.close_calls += 1
 
     def request_json(self, method, url, **kwargs):
         self.requests.append((method, url, kwargs))
@@ -238,6 +241,8 @@ class GachaHistoryValidationTests(unittest.TestCase):
         second_params = http_client.requests[1][2]["params"]
         self.assertEqual(second_params["pos"], 0)
         self.assertEqual(second_params["gachaTs"], "123456")
+        self.assertEqual(http_client.temporary_session_calls, 1)
+        self.assertEqual(http_client.close_calls, 1)
 
     def test_network_errors_share_http_client_error_path(self):
         http_client = _JsonStub([NetworkRequestError("网络连接失败")])
