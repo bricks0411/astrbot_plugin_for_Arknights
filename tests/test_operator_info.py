@@ -6,6 +6,7 @@ import sys
 import tempfile
 import weakref
 from pathlib import Path
+from unittest.mock import patch
 
 from bs4 import BeautifulSoup
 
@@ -13,11 +14,12 @@ PLUGIN_PARENT = Path(__file__).resolve().parents[2]
 if str(PLUGIN_PARENT) not in sys.path:
     sys.path.insert(0, str(PLUGIN_PARENT))
 
-from ..OperatorInfo.client import PrtsPage
-from ..OperatorInfo.exceptions import OperatorValidationError
-from ..OperatorInfo.parser import PrtsOperatorParser
-from ..OperatorInfo.service import OperatorEncyclopedia
-from ..storage.UserDB import DataStorageHandler
+from astrbot_plugin_for_Arknights.OperatorInfo.client import PrtsPage
+from astrbot_plugin_for_Arknights.OperatorInfo.exceptions import OperatorValidationError
+from astrbot_plugin_for_Arknights.OperatorInfo.models import OperatorData
+from astrbot_plugin_for_Arknights.OperatorInfo.parser import PrtsOperatorParser
+from astrbot_plugin_for_Arknights.OperatorInfo.service import OperatorEncyclopedia
+from astrbot_plugin_for_Arknights.storage.UserDB import DataStorageHandler
 
 
 class OperatorInfoRegressionTests(unittest.TestCase):
@@ -155,6 +157,40 @@ class OperatorLockLifecycleTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsNone(lock_reference())
         self.assertNotIn("测试干员", self.service._locks)
+
+    async def test_concurrent_queries_fetch_once_then_share_cache(self):
+        fetch_count = 0
+        cached_operator: OperatorData | None = None
+
+        def load_cache(name, *, allow_expired=False):
+            return cached_operator
+
+        def fetch_and_cache(name):
+            nonlocal fetch_count, cached_operator
+            fetch_count += 1
+            cached_operator = OperatorData(name=name)
+            return cached_operator
+
+        with (
+            patch.object(self.service, "_load_cache", side_effect=load_cache),
+            patch.object(
+                self.service,
+                "_fetch_and_cache",
+                side_effect=fetch_and_cache,
+            ),
+        ):
+            results = await asyncio.gather(
+                *(
+                    self.service.get_operator("测试干员")
+                    for _ in range(30)
+                )
+            )
+
+        self.assertEqual(fetch_count, 1)
+        self.assertEqual(len(results), 30)
+        self.assertTrue(
+            all(result is cached_operator for result in results)
+        )
 
 
 class StorageMigrationRegressionTests(unittest.TestCase):
