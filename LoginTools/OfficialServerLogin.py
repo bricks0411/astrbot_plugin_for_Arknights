@@ -94,7 +94,7 @@ class OfficialServerLogin:
     async def aget_verification_code(
         self,
         phone: str
-    ) -> RequestResultOfVerificationCode | None:
+    ) -> RequestResultOfVerificationCode:
         """创建单独线程执行验证码获取逻辑，并将数据返回给 main.py"""
         return await asyncio.to_thread (
             self._get_verification_code,

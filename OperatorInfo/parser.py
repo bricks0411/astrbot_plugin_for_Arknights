@@ -195,7 +195,10 @@ class PrtsOperatorParser:
             if node.name != "p" or "技能" not in self._clean_text(node):
                 continue
             table = node.find_next_sibling("table")
-            if not isinstance(table, Tag) or "nomobile" not in table.get("class", []):
+            if not isinstance(table, Tag):
+                continue
+            table_classes = table.get("class")
+            if not isinstance(table_classes, list) or "nomobile" not in table_classes:
                 continue
             skill = self._parse_skill_table(node, table)
             if skill:
