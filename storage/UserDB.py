@@ -207,7 +207,7 @@ class DataStorageHandler:
                 for gacha in gacha_history
             ]
             # 调试：输出列表长度
-            print(f"size of params: {len(params)}")
+            # print(f"size of params: {len(params)}")
         except (KeyError, TypeError) as exc:
             return ReturnResultOfDatabaseOperation (
                 status=False,
