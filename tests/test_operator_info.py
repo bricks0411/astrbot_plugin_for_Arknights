@@ -10,11 +10,11 @@ PLUGIN_PARENT = Path(__file__).resolve().parents[2]
 if str(PLUGIN_PARENT) not in sys.path:
     sys.path.insert(0, str(PLUGIN_PARENT))
 
-from OperatorInfo.client import PrtsPage
-from OperatorInfo.exceptions import OperatorValidationError
-from OperatorInfo.parser import PrtsOperatorParser
-from OperatorInfo.service import OperatorEncyclopedia
-from astrbot_plugin_for_Arknights.storage.UserDB import DataStorageHandler
+from ..OperatorInfo.client import PrtsPage
+from ..OperatorInfo.exceptions import OperatorValidationError
+from ..OperatorInfo.parser import PrtsOperatorParser
+from ..OperatorInfo.service import OperatorEncyclopedia
+from ..storage.UserDB import DataStorageHandler
 
 
 class OperatorInfoRegressionTests(unittest.TestCase):
