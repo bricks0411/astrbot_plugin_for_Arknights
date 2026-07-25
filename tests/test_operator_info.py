@@ -1,7 +1,10 @@
+import asyncio
+import gc
 import unittest
 import sqlite3
 import sys
 import tempfile
+import weakref
 from pathlib import Path
 
 from bs4 import BeautifulSoup
@@ -87,6 +90,71 @@ class OperatorInfoRegressionTests(unittest.TestCase):
         self.assertEqual(operator.name, "凯尔希·思衡托")
         self.assertEqual(operator.rarity, 6)
         self.assertEqual(operator.profession, "医疗")
+
+
+class OperatorLockLifecycleTests(unittest.IsolatedAsyncioTestCase):
+
+    def setUp(self):
+        self.cache_dir = tempfile.TemporaryDirectory()
+        self.service = OperatorEncyclopedia(
+            client=None,
+            cache_dir=self.cache_dir.name,
+            download_portrait=False,
+        )
+
+    def tearDown(self):
+        self.cache_dir.cleanup()
+
+    async def test_same_operator_reuses_live_lock(self):
+        first_lock = self.service._locks.setdefault("测试干员", asyncio.Lock())
+        second_lock = self.service._locks.setdefault("测试干员", asyncio.Lock())
+
+        self.assertIs(second_lock, first_lock)
+        self.assertEqual(len(self.service._locks), 1)
+
+    async def test_unused_lock_is_removed_after_last_strong_reference(self):
+        lock = self.service._locks.setdefault("测试干员", asyncio.Lock())
+        lock_reference = weakref.ref(lock)
+
+        del lock
+        gc.collect()
+
+        self.assertIsNone(lock_reference())
+        self.assertNotIn("测试干员", self.service._locks)
+
+    async def test_waiting_task_keeps_lock_alive_until_it_finishes(self):
+        owner_lock = self.service._locks.setdefault(
+            "测试干员",
+            asyncio.Lock(),
+        )
+        await owner_lock.acquire()
+        waiter_started = asyncio.Event()
+
+        async def wait_for_lock():
+            lock = self.service._locks.setdefault(
+                "测试干员",
+                asyncio.Lock(),
+            )
+            waiter_started.set()
+            async with lock:
+                pass
+
+        waiter = asyncio.create_task(wait_for_lock())
+        await waiter_started.wait()
+        await asyncio.sleep(0)
+
+        lock_reference = weakref.ref(owner_lock)
+        self.assertIs(self.service._locks.get("测试干员"), owner_lock)
+
+        owner_lock.release()
+        del owner_lock
+        await waiter
+        del waiter
+        await asyncio.sleep(0)
+        gc.collect()
+
+        self.assertIsNone(lock_reference())
+        self.assertNotIn("测试干员", self.service._locks)
 
 
 class StorageMigrationRegressionTests(unittest.TestCase):
