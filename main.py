@@ -212,11 +212,11 @@ class ArknightsChecker(Star):
             return None, "保存的登录凭证不完整"
 
         return RequestResultOfDoctorInfo(
-            status  = True,
-            phone   = "",
-            token   = token_result.user_token,
-            uid     = token_result.account_id,
-            nickName = token_result.nickname,
+            status      = True,
+            phone       = "",
+            token       = token_result.user_token,
+            uid         = token_result.account_id,
+            nickName    = token_result.nickname,
         ), None
 
 
