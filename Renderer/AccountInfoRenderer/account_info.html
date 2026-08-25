@@ -1,0 +1,418 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root {
+      --assist-card-width: 250px;
+      --assist-card-gap: 12px;
+      --content-padding: 24px;
+      --page-padding: 24px;
+      --assist-grid-width: calc(
+        var(--assist-card-width) +
+        var(--assist-card-width) +
+        var(--assist-card-width) +
+        var(--assist-card-gap) +
+        var(--assist-card-gap)
+      );
+      --sheet-width: calc(
+        var(--assist-grid-width) +
+        var(--content-padding) +
+        var(--content-padding) +
+        2px
+      );
+      --page-width: calc(
+        var(--sheet-width) +
+        var(--page-padding) +
+        var(--page-padding)
+      );
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      width: var(--page-width);
+      background: #eef1f3;
+      color: #172026;
+    }
+
+    body {
+      padding: var(--page-padding);
+      font-family: "Microsoft YaHei", "Noto Sans SC", sans-serif;
+    }
+
+    .sheet {
+      width: var(--sheet-width);
+      overflow: hidden;
+      background: #fff;
+      border: 1px solid #d8dde1;
+      border-radius: 8px;
+      box-shadow: 0 18px 46px rgba(23, 32, 38, 0.1);
+    }
+
+    .header {
+      display: flex;
+      min-height: 210px;
+      border-bottom: 1px solid #d8dde1;
+    }
+
+    .identity {
+      flex: 1;
+      padding: 38px 44px 34px;
+    }
+
+    .eyebrow {
+      color: #68747c;
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+
+    h1 {
+      margin: 10px 0 8px;
+      font-size: 50px;
+      line-height: 1.12;
+      font-weight: 800;
+      letter-spacing: 0;
+      overflow-wrap: anywhere;
+    }
+
+    .uid {
+      color: #68747c;
+      font-family: Consolas, monospace;
+      font-size: 18px;
+    }
+
+    .data-date {
+      margin-top: 8px;
+      color: #8a949a;
+      font-size: 13px;
+    }
+
+    .level-area {
+      width: 240px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px 36px 24px 12px;
+    }
+
+    .level-ring {
+      width: 142px;
+      height: 142px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: conic-gradient(
+        #f2c94c 0 var(--level-progress),
+        #cfd4d7 var(--level-progress) 100%
+      );
+      box-shadow: 0 8px 24px rgba(23, 32, 38, 0.12);
+    }
+
+    .level-core {
+      width: 118px;
+      height: 118px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: #f1f3f4;
+      color: #172026;
+      font-size: 32px;
+      font-weight: 800;
+    }
+
+    .overview {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: var(--assist-card-gap);
+      padding: 28px var(--content-padding) 34px;
+      background: #f4f6f7;
+      border-bottom: 1px solid #d8dde1;
+    }
+
+    .datum {
+      min-height: 112px;
+      padding: 24px 32px;
+      background: #fff;
+      border: 1px solid #dfe4e7;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(23, 32, 38, 0.05);
+    }
+
+    .datum-label {
+      color: #78838a;
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    .datum-value {
+      margin-top: 9px;
+      font-size: 25px;
+      line-height: 1.3;
+      font-weight: 700;
+      overflow-wrap: anywhere;
+    }
+
+    .assists {
+      padding: 34px var(--content-padding) 40px;
+    }
+
+    .section-title {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      margin-bottom: 20px;
+    }
+
+    h2 {
+      margin: 0;
+      font-size: 25px;
+      letter-spacing: 0;
+    }
+
+    .count {
+      color: #78838a;
+      font-size: 14px;
+    }
+
+    .assist-grid {
+      display: grid;
+      grid-template-columns: repeat(3, var(--assist-card-width));
+      justify-content: center;
+      gap: var(--assist-card-gap);
+    }
+
+    .assist {
+      width: var(--assist-card-width);
+      min-width: 0;
+      overflow: hidden;
+      border: 1px solid #d8dde1;
+      border-radius: 8px;
+      background: #f8f9fa;
+    }
+
+    .portrait {
+      position: relative;
+      width: var(--assist-card-width);
+      height: var(--assist-card-width);
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      overflow: hidden;
+      background: #e8ecee;
+      border-bottom: 1px solid #d8dde1;
+    }
+
+    .avatar-image {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      object-position: center bottom;
+    }
+
+    .rarity-icon {
+      position: absolute;
+      bottom: 12px;
+      left: 12px;
+      height: 33px;
+      width: auto;
+      filter: drop-shadow(0 2px 3px rgba(23, 32, 38, 0.45));
+    }
+
+    .profession-icon {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      width: 48px;
+      height: 48px;
+      object-fit: contain;
+      filter: drop-shadow(0 2px 3px rgba(23, 32, 38, 0.45));
+    }
+
+    .rarity-text {
+      position: absolute;
+      bottom: 12px;
+      left: 12px;
+      padding: 5px 8px;
+      background: rgba(23, 32, 38, 0.88);
+      border-radius: 6px;
+      color: #ffd45c;
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .assist-body {
+      padding: 18px;
+    }
+
+    .assist-name {
+      min-height: 34px;
+      font-size: 22px;
+      line-height: 1.25;
+      font-weight: 800;
+      overflow-wrap: anywhere;
+    }
+
+    .role {
+      margin: 5px 0 15px;
+      color: #68747c;
+      font-size: 14px;
+    }
+
+    .tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+    }
+
+    .tag {
+      min-height: 31px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 8px;
+      border: 1px solid #d3d9dd;
+      border-radius: 6px;
+      background: #fff;
+      color: #39454c;
+      font-size: 13px;
+      line-height: 1.2;
+    }
+
+    .elite-icon {
+      height: 22px;
+      width: auto;
+    }
+
+    .empty {
+      grid-column: 1 / -1;
+      padding: 45px;
+      border: 1px dashed #c8cfd3;
+      border-radius: 8px;
+      color: #78838a;
+      text-align: center;
+    }
+
+    .footer {
+      padding: 14px var(--content-padding);
+      background: #172026;
+      color: #cfd6da;
+      font-size: 13px;
+      text-align: right;
+    }
+  </style>
+</head>
+<body>
+  <main class="sheet">
+    <header class="header">
+      <div class="identity">
+        <div class="eyebrow">RHODES ISLAND · DOCTOR PROFILE</div>
+        <h1>{{ name }}</h1>
+        <div class="uid">UID {{ uid }}</div>
+        <div class="data-date">数据截至 {{ data_date }}</div>
+      </div>
+      <div class="level-area">
+        <div
+          class="level-ring"
+          style="--level-progress: {{ level_progress_percent }}%;"
+          aria-label="当前等级经验进度 {{ level_progress_percent }}%"
+        >
+          <div class="level-core">{{ level_text }}</div>
+        </div>
+      </div>
+    </header>
+
+    <section class="overview">
+      <div class="datum">
+        <div class="datum-label">主线进度</div>
+        <div class="datum-value">{{ stage_text }}</div>
+      </div>
+      <div class="datum">
+        <div class="datum-label">入职日</div>
+        <div class="datum-value">{{ register_date }}</div>
+      </div>
+      <div class="datum">
+        <div class="datum-label">最近在线</div>
+        <div class="datum-value">{{ last_online_date }}</div>
+      </div>
+      <div class="datum">
+        <div class="datum-label">剩余理智</div>
+        <div class="datum-value">{{ ap_text }}</div>
+      </div>
+    </section>
+
+    <section class="assists">
+      <div class="section-title">
+        <h2>助战干员</h2>
+        <span class="count">{{ assist_chars | length }} / 3</span>
+      </div>
+
+      <div class="assist-grid">
+        {% for char in assist_chars %}
+        <article class="assist">
+          <div class="portrait">
+            <img
+              class="avatar-image"
+              src="{{ char.avatar_url }}"
+              alt="{{ char.name }}"
+            >
+            {% if char.profession_icon_url %}
+            <img
+              class="profession-icon"
+              src="{{ char.profession_icon_url }}"
+              alt="{{ char.profession }}"
+            >
+            {% endif %}
+            {% if char.rarity_icon_url %}
+            <img
+              class="rarity-icon"
+              src="{{ char.rarity_icon_url }}"
+              alt="{{ char.rarity }} 星"
+            >
+            {% elif char.rarity %}
+            <span class="rarity-text">{{ char.rarity }} 星</span>
+            {% endif %}
+          </div>
+
+          <div class="assist-body">
+            <div class="assist-name">{{ char.name }}</div>
+            <div class="role">{{ char.profession }} · {{ char.branch }}</div>
+            <div class="tags">
+              <span class="tag">
+                {% if char.elite_icon_url %}
+                <img
+                  class="elite-icon"
+                  src="{{ char.elite_icon_url }}"
+                  alt="精英 {{ char.elite_phase }}"
+                >
+                {% else %}
+                精英 {{ char.elite_phase }} ·
+                {% endif %}
+                {{ char.level_text }}
+              </span>
+              <span class="tag">{{ char.potential_text }}</span>
+              <span class="tag">{{ char.skill_text }}</span>
+              {% if char.module_text %}
+              <span class="tag">{{ char.module_text }}</span>
+              {% endif %}
+            </div>
+          </div>
+        </article>
+        {% else %}
+        <div class="empty">未设置助战干员</div>
+        {% endfor %}
+      </div>
+    </section>
+
+    <footer class="footer">
+      数据来自森空岛 API · 非官方公开接口，不保证服务稳定性
+    </footer>
+  </main>
+</body>
+</html>
