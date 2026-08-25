@@ -14,6 +14,7 @@ from ..network.validation import (
     require_str,
 )
 
+
 class _StubHttpClient:
 
     def __init__(self, response=None, error=None):

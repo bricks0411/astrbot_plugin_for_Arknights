@@ -1,16 +1,18 @@
 # LoginTools/OfficialServerLogin.py
 import asyncio
 
-from .models import RequestResultOfVerificationCode, RequestResultOfAuth, RequestResultOfAccountToken
+from ..network.exceptions import HttpClientError
 from ..network.HttpClient import HttpClient
-from ..network.exceptions import (
-    HttpClientError
-)
 from ..network.validation import (
     require_dict,
     require_int,
     require_optional_str,
     require_str,
+)
+from .models import (
+    RequestResultOfAccountToken,
+    RequestResultOfAuth,
+    RequestResultOfVerificationCode,
 )
 
 
@@ -130,11 +132,11 @@ class OfficialServerLogin:
             )
 
             status = require_int(result.get("status"), "status")
+            msg = _response_message(result, "hgId 与 token 获取成功")
             if status == 0:
                 data = require_dict(result.get("data"), "data")
                 token = require_str(data.get("token"), "data.token")
                 hgId = require_str(data.get("hgId"), "data.hgId")
-                msg = require_str(result.get("msg"), "msg")
                 return RequestResultOfAuth (
                     status  = True,
                     phone   = phone,
@@ -143,11 +145,13 @@ class OfficialServerLogin:
                     message = msg
                 )
             else:
-                msg = require_str(result.get("msg"), "msg")
                 return RequestResultOfAuth (
                     status  = False,
                     phone   = phone,
-                    message = msg
+                    message = _response_message(
+                        result,
+                        f"hgId 与 token 获取失败：status = {status}"
+                    )
                 )
         except HttpClientError as exc:
             return RequestResultOfAuth (
@@ -161,7 +165,7 @@ class OfficialServerLogin:
         phone: str,
         verification_code: str | int
     ) -> RequestResultOfAuth:
-        """创建单独线程执行验证码登录逻辑，并将数据返回给 main.py"""
+        """创建单独线程执行验证码登录逻辑，并将获取的 auth_token 返回给 main.py"""
         return await asyncio.to_thread (
             self._get_auth_token,
             phone,
@@ -181,6 +185,8 @@ class OfficialServerLogin:
                 message = "登录 token 不能为空"
             )
 
+        # 不懂 狗屁通老师 为什么要加这么多请求头字段，感觉没有必要
+        # 但之前的经验教训告诉我，来路不明的代码别随便删，所以还是留着吧，对可读性影响也不大
         headers = {
             "Accept": "*/*",
             "Accept-Language": "zh-CN,zh;q=0.9",
@@ -209,6 +215,7 @@ class OfficialServerLogin:
             )
 
             status = require_int(result.get("status"), "status")
+            msg = _response_message(result, "账号凭证获取成功")
             if status == 0:
                 data = require_dict(result.get("data"), "data")
                 account_token = require_str(data.get("token"), "data.token")
@@ -216,7 +223,7 @@ class OfficialServerLogin:
                     status       = True,
                     phone        = phone,
                     accountToken = account_token,
-                    message      = _response_message(result, "账号凭证获取成功")
+                    message      = msg
                 )
 
             return RequestResultOfAccountToken (
@@ -224,7 +231,7 @@ class OfficialServerLogin:
                 phone   = phone,
                 message = _response_message(
                     result,
-                    f"grant token 获取失败：status={status}",
+                    f"grant token 获取失败：status = {status}",
                 )
             )
         except HttpClientError as exc:
@@ -239,7 +246,7 @@ class OfficialServerLogin:
         login_token: str,
         phone: str
     ) -> RequestResultOfAccountToken:
-        """创建单独线程执行账号凭证获取逻辑，并将数据返回给 main.py"""
+        """执行账号凭证获取逻辑，并将数据返回给 main.py"""
         return await asyncio.to_thread (
             self._get_account_token,
             login_token,

@@ -1,23 +1,41 @@
 # storage/UserDB.py
 
 import asyncio
+import hashlib
+import json
 import sqlite3
 import time
 import warnings
-
-from cryptography.fernet import Fernet, InvalidToken
+import zlib
 from pathlib import Path
 from threading import RLock
 
+from cryptography.fernet import Fernet, InvalidToken
+
 from ..GetDoctorInfo.models import RequestResultOfDoctorInfo
 from .models import (
+    ReturnResultOfAccountDataFromDatabase,
+    ReturnResultOfAccountDataOperation,
     ReturnResultOfDatabaseOperation,
     ReturnResultOfGachaHistoryFromDatabase,
+    ReturnResultOfSklandCredentials,
+    ReturnResultOfSklandCredentialsOperation,
     ReturnResultOfUserToken,
 )
 
 
 class DataStorageHandler:
+
+    _SCRIPT_DIR = Path(__file__).with_name("script")
+    _SCHEMA_FILE = _SCRIPT_DIR / "InitDB.sql"
+    _ACCOUNT_SNAPSHOT_MIGRATION_FILE = (
+        _SCRIPT_DIR / "MigrateAccountSnapshots.sql"
+    )
+    _ACCOUNT_DATA_COMPRESSION = "zlib"
+    _ACCOUNT_DATA_ENCRYPTION_VERSION = 1
+    _ACCOUNT_DATA_SCHEMA_VERSION = "1"
+
+    # region 数据库初始化与连接配置
 
     def __init__(
         self,
@@ -44,7 +62,7 @@ class DataStorageHandler:
 
 
     def _load_or_create_token_key(self) -> bytes:
-        """加载本地 token 加密密钥；首次运行时永久生成。"""
+        """加载本地 token 加密密钥；首次运行时永久生成"""
         key_path = self.db_path.parent / "token.key"
         if key_path.is_file():
             return key_path.read_bytes().strip()
@@ -76,58 +94,18 @@ class DataStorageHandler:
 
 
     def _init_schema(self) -> None:
-        """表创建逻辑"""
+        """加载外部 SQL 建表脚本，并执行现有数据库的兼容迁移"""
         with self._lock:
-            # 创建用户表
-            self._conn.executescript(
-                """
-                CREATE TABLE IF NOT EXISTS account_bindings (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+            try:
+                schema_sql = self._SCHEMA_FILE.read_text(encoding="utf-8")
+            except OSError as exc:
+                raise RuntimeError(
+                    f"无法读取数据库初始化脚本：{self._SCHEMA_FILE}"
+                ) from exc
+            if not schema_sql.strip():
+                raise RuntimeError(f"数据库初始化脚本为空：{self._SCHEMA_FILE}")
+            self._conn.executescript(schema_sql)
 
-                    platform_name TEXT NOT NULL,
-                    user_id TEXT NOT NULL,
-
-                    server_type TEXT NOT NULL,
-                    auth_provider TEXT NOT NULL,
-
-                    account_id TEXT NOT NULL,
-                    nickname TEXT,
-                    phone_mask TEXT,
-                    phone_hash TEXT,
-
-                    token_encrypted TEXT NOT NULL,
-                    created_at INTEGER NOT NULL,
-                    updated_at INTEGER NOT NULL,
-
-                    UNIQUE(platform_name, user_id, server_type)
-                )
-                """
-            )
-            self._conn.executescript (
-                """
-                CREATE TABLE IF NOT EXISTS gacha_records (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-
-                    uid TEXT NOT NULL,
-                    category TEXT NOT NULL DEFAULT '',
-
-                    pool_id TEXT NOT NULL,
-                    pool_name TEXT NOT NULL,
-
-                    char_id TEXT NOT NULL,
-                    char_name TEXT NOT NULL,
-                    rarity INTEGER NOT NULL,
-                    is_new INTEGER NOT NULL,
-
-                    gacha_ts TEXT NOT NULL,
-                    pos INTEGER NOT NULL,
-
-                    created_at INTEGER NOT NULL,
-
-                    UNIQUE(uid, pool_id, gacha_ts, pos, char_id)
-                );
-                """
-            )
             account_columns = {
                 row["name"]
                 for row in self._conn.execute("PRAGMA table_info(account_bindings)")
@@ -145,7 +123,7 @@ class DataStorageHandler:
                         "ALTER TABLE gacha_records ADD COLUMN category TEXT NOT NULL DEFAULT ''"
                     )
 
-                # 无论 category 是本次新增还是由中间版本提前创建，都补齐遗留空分类。
+                # 无论 category 是本次新增还是由中间版本提前创建，都补齐遗留空分类
                 self._conn.execute(
                     """
                     UPDATE gacha_records
@@ -157,6 +135,66 @@ class DataStorageHandler:
                     WHERE category = ''
                     """
                 )
+
+            snapshot_info = list(
+                self._conn.execute("PRAGMA table_info(skland_account_snapshots)")
+            )
+            snapshot_columns = {row["name"] for row in snapshot_info}
+            snapshot_primary_key = [
+                row["name"]
+                for row in sorted(snapshot_info, key=lambda row: row["pk"])
+                if row["pk"]
+            ]
+            if (
+                snapshot_primary_key != ["uid", "server_type"]
+                or "last_error" in snapshot_columns
+            ):
+                self._migrate_account_snapshots(snapshot_columns)
+
+
+    def _migrate_account_snapshots(self, existing_columns: set[str]) -> None:
+        """将旧账号快照表迁移到当前复合主键结构"""
+        required_columns = {
+            "uid",
+            "server_type",
+            "payload",
+            "compression",
+            "encryption_version",
+            "payload_sha256",
+            "api_current_ts",
+            "fetched_at",
+            "updated_at",
+            "schema_version",
+        }
+        missing_columns = required_columns - existing_columns
+        if missing_columns:
+            missing = ", ".join(sorted(missing_columns))
+            raise RuntimeError(f"账号快照表缺少迁移所需字段：{missing}")
+
+        try:
+            migration_sql = self._ACCOUNT_SNAPSHOT_MIGRATION_FILE.read_text(
+                encoding="utf-8"
+            )
+        except OSError as exc:
+            raise RuntimeError(
+                "无法读取账号快照迁移脚本："
+                f"{self._ACCOUNT_SNAPSHOT_MIGRATION_FILE}"
+            ) from exc
+        if not migration_sql.strip():
+            raise RuntimeError(
+                f"账号快照迁移脚本为空：{self._ACCOUNT_SNAPSHOT_MIGRATION_FILE}"
+            )
+
+        try:
+            self._conn.executescript(migration_sql)
+        except sqlite3.Error:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            raise
+
+    # endregion
+
+    # region 抽卡记录存储与查询
 
 
     def _update_gacha_history(
@@ -337,7 +375,7 @@ class DataStorageHandler:
         user_id: str,
         server_type: str,
     ) -> ReturnResultOfGachaHistoryFromDatabase:
-        """根据聊天平台用户绑定，仅从数据库读取抽卡记录。"""
+        """根据聊天平台用户绑定，仅从数据库读取抽卡记录"""
         if not platform_name or not user_id or not server_type:
             return ReturnResultOfGachaHistoryFromDatabase (
                 status  = False,
@@ -387,13 +425,264 @@ class DataStorageHandler:
         user_id: str,
         server_type: str,
     ) -> ReturnResultOfGachaHistoryFromDatabase:
-        """在线程中根据聊天平台用户绑定读取本地抽卡记录。"""
+        """在线程中根据聊天平台用户绑定读取本地抽卡记录"""
         return await asyncio.to_thread(
             self._get_gacha_history_by_user,
             platform_name,
             user_id,
             server_type,
         )
+
+    # endregion
+
+    # region 森空岛角色数据存储与查询
+
+
+    def _update_account_data(
+        self,
+        uid: str,
+        account_data: dict,
+        server_type: str = "official",
+    ) -> ReturnResultOfAccountDataOperation:
+        """序列化、压缩并加密指定 UID 的森空岛角色数据"""
+        if not uid or not server_type:
+            return ReturnResultOfAccountDataOperation(
+                status  = False,
+                message = "玩家 UID 和服务器类型均不能为空",
+                uid     = uid or None,
+            )
+        if not isinstance(account_data, dict):
+            return ReturnResultOfAccountDataOperation(
+                status  = False,
+                message = "账号数据必须是字典",
+                uid     = uid,
+            )
+
+        try:
+            serialized_data = json.dumps(
+                account_data,
+                ensure_ascii = False,
+                allow_nan    = False,
+                separators   = (",", ":"),
+                sort_keys    = True,
+            ).encode("utf-8")
+            payload_sha256 = hashlib.sha256(serialized_data).hexdigest()
+            compressed_data = zlib.compress(serialized_data)
+            encrypted_payload = self._fernet.encrypt(compressed_data)
+        except (TypeError, ValueError, UnicodeError, zlib.error) as exc:
+            return ReturnResultOfAccountDataOperation(
+                status  = False,
+                message = f"账号数据压缩失败：{exc}",
+                uid     = uid,
+            )
+
+        api_current_ts_value = account_data.get("currentTs")
+        api_current_ts = (
+            api_current_ts_value
+            if isinstance(api_current_ts_value, int)
+            and not isinstance(api_current_ts_value, bool)
+            else None
+        )
+        now = int(time.time())
+
+        try:
+            with self._lock:
+                with self._conn:
+                    cursor = self._conn.execute(
+                        """
+                        INSERT INTO skland_account_snapshots (
+                            uid, server_type, payload, compression,
+                            encryption_version, payload_sha256,
+                            api_current_ts, fetched_at, updated_at,
+                            schema_version
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(uid, server_type) DO UPDATE SET
+                            payload = excluded.payload,
+                            compression = excluded.compression,
+                            encryption_version = excluded.encryption_version,
+                            payload_sha256 = excluded.payload_sha256,
+                            api_current_ts = excluded.api_current_ts,
+                            fetched_at = excluded.fetched_at,
+                            updated_at = excluded.updated_at,
+                            schema_version = excluded.schema_version
+                        WHERE skland_account_snapshots.api_current_ts IS NULL
+                           OR (
+                               excluded.api_current_ts IS NOT NULL
+                               AND excluded.api_current_ts
+                                   >= skland_account_snapshots.api_current_ts
+                           )
+                        """,
+                        (
+                            uid,
+                            server_type,
+                            encrypted_payload,
+                            self._ACCOUNT_DATA_COMPRESSION,
+                            self._ACCOUNT_DATA_ENCRYPTION_VERSION,
+                            payload_sha256,
+                            api_current_ts,
+                            now,
+                            now,
+                            self._ACCOUNT_DATA_SCHEMA_VERSION,
+                        ),
+                    )
+        except sqlite3.Error as exc:
+            return ReturnResultOfAccountDataOperation(
+                status  = False,
+                message = f"账号数据写入失败：{exc}",
+                uid     = uid,
+            )
+
+        if cursor.rowcount == 0:
+            return ReturnResultOfAccountDataOperation(
+                status  = True,
+                message = "服务器账号数据早于本地快照，已保留本地数据",
+                uid     = uid,
+                updated = False,
+            )
+
+        return ReturnResultOfAccountDataOperation(
+            status          = True,
+            message         = "账号数据已压缩存储或更新",
+            uid             = uid,
+            payload_sha256  = payload_sha256,
+            original_size   = len(serialized_data),
+            compressed_size = len(compressed_data),
+            fetched_at      = now,
+            updated         = True,
+        )
+
+
+    async def aupdate_account_data(
+        self,
+        uid: str,
+        account_data: dict,
+        server_type: str = "official",
+    ) -> ReturnResultOfAccountDataOperation:
+        """压缩并存储指定 UID 的森空岛角色数据"""
+        return await asyncio.to_thread(
+            self._update_account_data,
+            uid,
+            account_data,
+            server_type,
+        )
+
+
+    def _get_account_data(
+        self,
+        uid: str,
+        server_type: str = "official",
+    ) -> ReturnResultOfAccountDataFromDatabase:
+        """读取、解密并解压指定 UID 的森空岛角色数据"""
+        if not uid or not server_type:
+            return ReturnResultOfAccountDataFromDatabase(
+                status  = False,
+                message = "玩家 UID 和服务器类型均不能为空",
+            )
+
+        try:
+            with self._lock:
+                row = self._conn.execute(
+                    """
+                    SELECT
+                        uid, server_type, payload, compression,
+                        encryption_version, payload_sha256,
+                        api_current_ts, fetched_at, updated_at,
+                        schema_version
+                    FROM skland_account_snapshots
+                    WHERE uid = ? AND server_type = ?
+                    """,
+                    (uid, server_type),
+                ).fetchone()
+        except sqlite3.Error as exc:
+            return ReturnResultOfAccountDataFromDatabase(
+                status  = False,
+                message = f"账号数据查询失败：{exc}",
+                uid     = uid,
+            )
+
+        if row is None:
+            return ReturnResultOfAccountDataFromDatabase(
+                status  = False,
+                message = "尚未保存账号数据",
+                uid     = uid,
+            )
+        if row["compression"] != self._ACCOUNT_DATA_COMPRESSION:
+            return ReturnResultOfAccountDataFromDatabase(
+                status  = False,
+                message = f"不支持的账号数据压缩格式：{row['compression']}",
+                uid     = row["uid"],
+            )
+        if row["encryption_version"] != self._ACCOUNT_DATA_ENCRYPTION_VERSION:
+            return ReturnResultOfAccountDataFromDatabase(
+                status  = False,
+                message = f"不支持的账号数据加密版本：{row['encryption_version']}",
+                uid     = row["uid"],
+            )
+
+        try:
+            encrypted_payload = bytes(row["payload"])
+            compressed_data = self._fernet.decrypt(encrypted_payload)
+            serialized_data = zlib.decompress(compressed_data)
+        except (InvalidToken, TypeError, ValueError, zlib.error):
+            return ReturnResultOfAccountDataFromDatabase(
+                status  = False,
+                message = "保存的账号数据无法解密或解压",
+                uid     = row["uid"],
+            )
+
+        payload_sha256 = hashlib.sha256(serialized_data).hexdigest()
+        if payload_sha256 != row["payload_sha256"]:
+            return ReturnResultOfAccountDataFromDatabase(
+                status  = False,
+                message = "保存的账号数据完整性校验失败",
+                uid     = row["uid"],
+            )
+
+        try:
+            account_data = json.loads(serialized_data.decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeError):
+            return ReturnResultOfAccountDataFromDatabase(
+                status  = False,
+                message = "保存的账号数据不是有效 JSON",
+                uid     = row["uid"],
+            )
+        if not isinstance(account_data, dict):
+            return ReturnResultOfAccountDataFromDatabase(
+                status  = False,
+                message = "保存的账号数据不是字典",
+                uid     = row["uid"],
+            )
+
+        return ReturnResultOfAccountDataFromDatabase(
+            status          = True,
+            message         = "账号数据查询成功",
+            uid             = row["uid"],
+            server_type     = row["server_type"],
+            account_data    = account_data,
+            payload_sha256  = row["payload_sha256"],
+            api_current_ts  = row["api_current_ts"],
+            fetched_at      = row["fetched_at"],
+            updated_at      = row["updated_at"],
+            schema_version  = row["schema_version"],
+        )
+
+
+    async def aget_account_data(
+        self,
+        uid: str,
+        server_type: str = "official",
+    ) -> ReturnResultOfAccountDataFromDatabase:
+        """在线程中读取并还原指定 UID 的森空岛角色数据"""
+        return await asyncio.to_thread(
+            self._get_account_data,
+            uid,
+            server_type,
+        )
+
+    # endregion
+
+    # region 平台账号绑定与官服 token
 
 
     def _update_user_token(
@@ -403,7 +692,7 @@ class DataStorageHandler:
         server_type: str,
         user_info: RequestResultOfDoctorInfo,
     ) -> ReturnResultOfDatabaseOperation:
-        """新增或更新指定平台用户的账号 token。"""
+        """新增或更新指定平台用户的账号 token"""
         if not platform_name or not user_id or not server_type:
             return ReturnResultOfDatabaseOperation (
                 status=False,
@@ -465,7 +754,7 @@ class DataStorageHandler:
         server_type: str,
         user_info: RequestResultOfDoctorInfo,
     ) -> ReturnResultOfDatabaseOperation:
-        """在线程中新增或更新用户 token。"""
+        """在线程中新增或更新用户 token"""
         return await asyncio.to_thread(
             self._update_user_token,
             platform_name,
@@ -536,7 +825,7 @@ class DataStorageHandler:
         user_id: str,
         server_type: str,
     ) -> ReturnResultOfUserToken:
-        """在线程中查询用户 token。"""
+        """在线程中查询用户 token"""
         return await asyncio.to_thread(
             self._get_user_token,
             platform_name,
@@ -544,9 +833,158 @@ class DataStorageHandler:
             server_type,
         )
 
+    # endregion
+
+    # region 森空岛凭证存储与查询
+
+
+    def _get_skland_credentials(
+        self,
+        uid: str,
+    ) -> ReturnResultOfSklandCredentials:
+        """按游戏 UID 查询并解密森空岛 cred 与签名 token"""
+        if not uid:
+            return ReturnResultOfSklandCredentials(
+                status  = False,
+                message = "玩家 UID 不能为空",
+            )
+
+        try:
+            with self._lock:
+                row = self._conn.execute(
+                    """
+                    SELECT uid, cred_encrypted, token_encrypted
+                    FROM skland_credentials
+                    WHERE uid = ?
+                    """,
+                    (uid,),
+                ).fetchone()
+        except sqlite3.Error as exc:
+            return ReturnResultOfSklandCredentials(
+                status  = False,
+                message = f"森空岛凭证查询失败：{exc}",
+            )
+
+        if row is None:
+            return ReturnResultOfSklandCredentials(
+                status  = False,
+                message = "尚未保存森空岛凭证",
+                uid     = uid,
+            )
+
+        try:
+            cred = self._fernet.decrypt(
+                row["cred_encrypted"].encode("ascii")
+            ).decode("utf-8")
+            token = self._fernet.decrypt(
+                row["token_encrypted"].encode("ascii")
+            ).decode("utf-8")
+        except (InvalidToken, UnicodeError, AttributeError):
+            return ReturnResultOfSklandCredentials(
+                status  = False,
+                message = "保存的森空岛凭证无法解密，请重新登录",
+                uid     = row["uid"],
+            )
+
+        return ReturnResultOfSklandCredentials(
+            status  = True,
+            message = "森空岛凭证查询成功",
+            uid     = row["uid"],
+            cred    = cred,
+            token   = token,
+        )
+
+
+    async def aget_skland_credentials(
+        self,
+        uid: str,
+    ) -> ReturnResultOfSklandCredentials:
+        """在线程中按 UID 查询森空岛凭证"""
+        return await asyncio.to_thread(
+            self._get_skland_credentials,
+            uid
+        )
+
+
+    def _update_skland_credentials(
+        self,
+        uid: str,
+        cred: str,
+        token: str,
+    ) -> ReturnResultOfSklandCredentialsOperation:
+        """新增或更新指定 UID 的森空岛凭证"""
+        if not uid or not cred or not token:
+            return ReturnResultOfSklandCredentialsOperation(
+                status  = False,
+                message = "UID、cred 和 token 均不能为空",
+                uid     = uid or None,
+            )
+
+        now = int(time.time())
+        try:
+            encrypted_cred = self._fernet.encrypt(
+                cred.encode("utf-8")
+            ).decode("ascii")
+            encrypted_token = self._fernet.encrypt(
+                token.encode("utf-8")
+            ).decode("ascii")
+            with self._lock:
+                with self._conn:
+                    self._conn.execute(
+                        """
+                        INSERT INTO skland_credentials (
+                            uid, cred_encrypted, token_encrypted,
+                            created_at, updated_at
+                        )
+                        VALUES (?, ?, ?, ?, ?)
+                        ON CONFLICT(uid) DO UPDATE SET
+                            cred_encrypted = excluded.cred_encrypted,
+                            token_encrypted = excluded.token_encrypted,
+                            updated_at = excluded.updated_at
+                        """,
+                        (
+                            uid,
+                            encrypted_cred,
+                            encrypted_token,
+                            now,
+                            now,
+                        ),
+                    )
+        except (sqlite3.Error, TypeError, UnicodeError) as exc:
+            return ReturnResultOfSklandCredentialsOperation(
+                status  = False,
+                message = f"森空岛凭证保存失败：{exc}",
+                uid     = uid,
+            )
+
+        return ReturnResultOfSklandCredentialsOperation(
+            status  = True,
+            message = "森空岛凭证已保存或更新",
+            uid     = uid,
+        )
+
+
+    async def aupdate_skland_credentials(
+        self,
+        uid: str,
+        cred: str,
+        token: str,
+    ) -> ReturnResultOfSklandCredentialsOperation:
+        """在线程中新增或更新森空岛凭证"""
+        return await asyncio.to_thread(
+            self._update_skland_credentials,
+            uid,
+            cred,
+            token,
+        )
+
+    # endregion
+
+    # region 数据库连接生命周期
+
 
     def close(self):
-        """在线程锁保护下关闭 SQLite 数据库连接。"""
+        """在线程锁保护下关闭 SQLite 数据库连接"""
         with self._lock:
             self._conn.close()
 
@@ -554,3 +992,5 @@ class DataStorageHandler:
     async def aclose(self):
         """关闭数据库连接，什么都不返回"""
         await asyncio.to_thread(self.close)
+
+    # endregion
