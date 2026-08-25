@@ -1,0 +1,1 @@
+"""AstrBot Arknights plugin package."""
