@@ -129,6 +129,9 @@ PRTS 请求使用插件专用 User-Agent，并优先绕过可能导致 TLS 断�
 │   ├── GetGachaHistory.py          # 卡池与寻访记录分页请求
 │   └── models.py
 ├── storage/
+│   ├── script/
+│   │   ├── InitDB.sql              # SQLite 初始表结构
+│   │   └── MigrateAccountSnapshots.sql # 账号快照表迁移脚本
 │   ├── UserDB.py                   # SQLite、token 与寻访记录持久化
 │   └── models.py
 ├── analysis/

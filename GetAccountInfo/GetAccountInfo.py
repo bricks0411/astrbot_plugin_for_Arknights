@@ -78,7 +78,7 @@ class GetAccountInfo:
                     status  = False,
                     code    = code,
                     message = _response_message(
-                        result, 
+                        result,
                         f"角色信息获取失败：code={code}"
                     )
                 )

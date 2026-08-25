@@ -3,10 +3,10 @@ import unittest
 from ..GachaHistory.GetGachaHistory import (
     OfficialGetGachaHistory,
 )
+from ..GetDoctorInfo.models import RequestResultOfDoctorInfo
 from ..GetDoctorInfo.OfficialDoctorInfoHandler import (
     OfficialDoctorInfoHandler,
 )
-from ..GetDoctorInfo.models import RequestResultOfDoctorInfo
 from ..network.exceptions import NetworkRequestError
 
 

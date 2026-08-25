@@ -34,11 +34,11 @@ class OfficialGetGachaHistory:
     USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36"
 
     def __init__(self, http_client: HttpClient):
-        """初始化官方抽卡记录客户端。"""
+        """初始化官方抽卡记录客户端"""
         self.http_client = http_client
 
     def _base_headers(self) -> dict[str, str]:
-        """构造访问明日方舟用户中心接口的基础请求头。"""
+        """构造访问明日方舟用户中心接口的基础请求头"""
         return {
             "Accept": "application/json, text/plain, */*",
             "Accept-Language": "zh-CN,zh;q=0.9",
@@ -61,7 +61,7 @@ class OfficialGetGachaHistory:
 
 
     def _get_u8_token(self, grant_token: str, uid: str) -> str | None:
-        """使用授权令牌和 UID 换取角色 U8 Token。"""
+        """使用授权令牌和 UID 换取角色 U8 Token"""
         headers = {
             **self._base_headers(),
             "Content-Type": "application/json",
@@ -88,7 +88,7 @@ class OfficialGetGachaHistory:
 
 
     def _get_role_cookie(self, u8_token: str) -> str | None:
-        """登录指定角色并返回用户中心会话 Cookie。"""
+        """登录指定角色并返回用户中心会话 Cookie"""
         headers = {
             **self._base_headers(),
             "Content-Type": "application/json",
