@@ -83,7 +83,19 @@ async def render_operator_card(
     return_url: bool = True,
     options: dict[str, Any] | None = None,
 ) -> str:
-    """调用 AstrBot Star.html_render() 渲染干员百科卡片"""
+    """
+    调用 AstrBot Star.html_render() 渲染干员百科卡片
+    * 是参数标记，在这之后的所有参数都必须是关键字参数
+    在这里，后续的 return_url 和 options 只能以关键字传入
+
+    例如：
+    await render_operator_card (
+        renderer,
+        operator,
+        return_url  =   True,
+        options     =   render_options
+    )
+    """
     render_options = dict(OPERATOR_INFO_RENDER_OPTIONS)
     if options:
         render_options.update(options)
@@ -91,8 +103,8 @@ async def render_operator_card(
         return await renderer.html_render(
             OPERATOR_INFO_TEMPLATE,
             build_operator_render_data(operator),
-            return_url=return_url,
-            options=render_options,
+            return_url  =   return_url,
+            options     =   render_options,
         )
     except Exception:
         # 部分公共 T2I 服务对 Base64 图片或请求体大小限制较严。
@@ -100,6 +112,6 @@ async def render_operator_card(
         return await renderer.html_render(
             OPERATOR_INFO_TEMPLATE,
             build_operator_render_data(operator, include_portrait=False),
-            return_url=return_url,
-            options=render_options,
+            return_url  =   return_url,
+            options     =   render_options,
         )

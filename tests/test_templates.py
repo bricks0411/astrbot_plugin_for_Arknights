@@ -1,10 +1,10 @@
 import unittest
 
-from ..OperatorInfo.renderer import (
-    OPERATOR_INFO_TEMPLATE,
-)
 from ..analysis.GachaHistoryT2I import (
     GACHA_STATISTICS_TEMPLATE,
+)
+from ..OperatorInfo.renderer import (
+    OPERATOR_INFO_TEMPLATE,
 )
 
 

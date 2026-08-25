@@ -1,8 +1,8 @@
 import asyncio
 import gc
-import unittest
 import sqlite3
 import tempfile
+import unittest
 import weakref
 from pathlib import Path
 from unittest.mock import patch
