@@ -208,10 +208,17 @@ __marimo__/
 
 # Local API notes
 /API.md
+/sklandAPI.md
 /avatar.md
 /operator.md
 /PRTS_OPERATOR_DATA_TECH_NOTES.md
 /PLUGIN_WORKFLOW.md
+/skland_token_chain.md
+/storage/UserDB_API.md
+
+# local data info
+/角色信息.json
+/data/
 
 # local html samples
 /aphrissa.html
