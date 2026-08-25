@@ -627,17 +627,17 @@ class ArknightsChecker(Star):
         skins_count = len(skins) if isinstance(skins, list) else 0
         activity_count = len(activity) if isinstance(activity, list) else 0
 
-        # 获取角色信息字段数量
-        category_count = len(set(account_data))
+        known_summary_fields = {"chars", "skins", "activity"}
+        other_category_count = len(set(account_data) - known_summary_fields)
 
         yield event.plain_result("账号数据更新成功")
         await asyncio.sleep(1)
 
         yield event.plain_result(
-            f"已同步 {category_count} 类数据，包括 "
-            f"{chars_count} 条干员数据、"
-            f"{skins_count} 条时装数据和 "
-            f"{activity_count} 条活动数据"
+            f"已同步 {chars_count} 条干员数据、"
+            f"{skins_count} 条时装数据、"
+            f"{activity_count} 条活动数据及 "
+            f"{other_category_count} 类其它数据"
         )
 
 
