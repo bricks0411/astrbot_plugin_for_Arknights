@@ -45,3 +45,62 @@ class ReturnResultOfAccountInfo:
     message: str | None = None
     image_url: str | None = None
     overview: AccountOverview | None = None
+
+
+@dataclass(slots=True, frozen=True)
+class AccountOperatorSkillInfo:
+    skill_id: str
+    sequence: int
+    icon_url: str
+    level_text: str
+    specialize_level: int
+    specialize_text: str | None
+
+
+@dataclass(slots=True, frozen=True)
+class AccountOperatorInfo:
+    char_id: str
+    name: str
+    avatar_url: str
+    rarity: int
+    profession: str
+    profession_icon_url: str | None
+    level: int
+    level_text: str
+    evolve_phase: int
+    elite_icon_url: str | None
+    potential_rank: int
+    potential_text: str
+    favor_percent: int
+    favor_text: str
+    main_skill_level: int
+    specialize_total: int
+    gain_time: int
+    skills: tuple[AccountOperatorSkillInfo, ...]
+
+
+@dataclass(slots=True, frozen=True)
+class AccountOperatorRarityGroup:
+    rarity: int
+    title: str
+    rarity_icon_url: str | None
+    operators: tuple[AccountOperatorInfo, ...]
+
+
+@dataclass(slots=True, frozen=True)
+class AccountOperatorOverview:
+    name: str
+    uid: str
+    data_date: str
+    groups: tuple[AccountOperatorRarityGroup, ...]
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+@dataclass(slots=True, frozen=True)
+class ReturnResultOfAccountOperatorInfo:
+    status: bool
+    message: str | None = None
+    image_url: str | None = None
+    overview: AccountOperatorOverview | None = None

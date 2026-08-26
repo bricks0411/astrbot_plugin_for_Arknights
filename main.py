@@ -33,6 +33,9 @@ from .OperatorInfo import (
     render_operator_card,
 )
 from .Renderer.AccountInfoRenderer.AccountInfo import AccountInfoRenderer
+from .Renderer.AccountOperatorInfoRenderer.AccountOperatorInfo import (
+    AccountOperatorInfoRenderer,
+)
 from .storage.UserDB import DataStorageHandler
 
 PLUGIN_NAME = "astrbot_plugin_for_Arknights"
@@ -138,6 +141,10 @@ class ArknightsChecker(Star):
             logger              = logger,
         )
         self.account_info_renderer = AccountInfoRenderer(
+            self._build_avatar_cache_path(),
+            logger=logger,
+        )
+        self.account_operator_info_renderer = AccountOperatorInfoRenderer(
             self._build_avatar_cache_path(),
             logger=logger,
         )
@@ -514,7 +521,7 @@ class ArknightsChecker(Star):
         # 验证码获取逻辑
         phone = args[1]
         logger.info(f"解析到用户手机号：{self.MaskPhone(phone)}")
-
+        # 获取验证码
         result = await self.official_server_login.aget_verification_code(phone)
 
         logger.info(f"验证码发送结果：status = {result.status}")
@@ -680,11 +687,7 @@ class ArknightsChecker(Star):
             if self.IsCredentialInvalid(gacha_history_result.message):
                 yield event.plain_result("登录凭证已失效，请重新登录官服账号")
                 await asyncio.sleep(0.5)
-                yield event.plain_result(
-                    "添加 bot 好友后，私聊使用 /方舟官服登录 或 /方舟B服登录 指令获取验证码\n"
-                    "之后使用 /官服验证码 <验证码> 或 /B服验证码 <验证码> 指令登录\n"
-                    "目前仅支持官服"
-                )
+                yield event.plain_result(self.GUIDE_GET_VERIFICATIONCODE_SERVER)
                 return
             # 这里 AI 的选择是直接输出错误消息，虽然便于定位问题，但有些过于“技术化”了。先保留吧
             yield event.plain_result(gacha_history_result.message)
@@ -771,7 +774,7 @@ class ArknightsChecker(Star):
         user_uid_result = await self.data_storage_handler.aget_user_token(platform_name, user_id, server_type)
         if not user_uid_result.status:
             logger.warning(f"角色 UID 获取失败：{user_uid_result.message}")
-            yield event.plain_result("角色 UID 获取失败，请稍后再试")
+            yield event.plain_result("角色 UID 获取失败，请检查森空岛登录态或稍后再试")
             return
 
         uid = user_uid_result.account_id
@@ -779,7 +782,8 @@ class ArknightsChecker(Star):
         user_info_result = await self.data_storage_handler.aget_account_data(uid, self.OFFICIAL)
         if not user_info_result.status:
             logger.warning(f"角色数据获取失败：{user_info_result.message}")
-            yield event.plain_result("角色数据获取失败，请检查森空岛登录态或稍后再试")
+            yield event.plain_result("角色数据获取失败，请检查森空岛登录态、数据是否更新或稍后再试")
+            await asyncio.sleep(0.5)
             yield event.plain_result(self.GUIDE_GET_VERIFICATIONCODE_SERVER)
             return
 
@@ -794,6 +798,46 @@ class ArknightsChecker(Star):
         yield event.image_result(render_result.image_url)
 
 
+    @filter.command("官服干员列表查询")
+    @command_error_boundary("官服干员列表查询")
+    async def GetAccountOperationInfo(self, event: AstrMessageEvent):
+        """获取角色干员练度总览"""
+        user_id = event.get_sender_id()
+        platform_name = event.get_platform_name()
+        server_type = self.OFFICIAL
+
+        # 免责声明
+        yield event.plain_result("由于数据量过大，渲染服务可能不稳定。若渲染失败，请等待一段时间后重试")
+
+        user_uid_result = await self.data_storage_handler.aget_user_token(platform_name, user_id, server_type)
+        if not user_uid_result.status:
+            logger.warning(f"角色 UID 获取失败：{user_uid_result.message}")
+            yield event.plain_result("角色 UID 获取失败，请检查森空岛登录态或稍后再试")
+            return
+
+        uid = user_uid_result.account_id
+
+        user_info_result = await self.data_storage_handler.aget_account_data(uid, server_type)
+        if not user_info_result.status:
+            logger.warning(f"角色数据获取失败：{user_info_result.message}")
+            yield event.plain_result("角色数据获取失败，请检查森空岛登录态、数据是否更新或稍后再试")
+            return
+
+        account_data = user_info_result.account_data
+        render_result = await self.account_operator_info_renderer.arender(
+            self,
+            account_data,
+        )
+
+        if not render_result.status or not render_result.image_url:
+            logger.warning(f"干员列表总览生成失败：{render_result.message}")
+            yield event.plain_result(
+                f"干员列表总览生成失败：{render_result.message}"
+            )
+            return
+
+        logger.info("干员列表总览生成成功")
+        yield event.image_result(render_result.image_url)
 
     @filter.command("干员百科")
     @command_error_boundary("干员百科")

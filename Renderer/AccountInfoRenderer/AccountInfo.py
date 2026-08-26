@@ -2,20 +2,16 @@
 from __future__ import annotations
 
 import asyncio
-import base64
-import hashlib
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
-from threading import RLock
 from typing import Any, Protocol
-from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
-import requests
-
 from ..models import AccountOverview, AssistCharInfo, ReturnResultOfAccountInfo
+from ..PrtsImageAssets import PrtsImageAssets
+from ..PrtsImageCache import PrtsImageCache
 
 
 class HtmlRenderer(Protocol):
@@ -45,28 +41,24 @@ ACCOUNT_INFO_TEMPLATE = (
 
 
 class AccountInfoRenderer:
-    AVATAR_REQUEST_TIMEOUT = 10
-    MAX_AVATAR_SIZE = 5 * 1024 * 1024
-    PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
     DISPLAY_TIMEZONE = ZoneInfo("Asia/Shanghai")
 
-    PROFESSION_NAMES = {
-        "PIONEER": "先锋",
-        "WARRIOR": "近卫",
-        "TANK": "重装",
-        "SNIPER": "狙击",
-        "CASTER": "术师",
-        "MEDIC": "医疗",
-        "SUPPORT": "辅助",
-        "SPECIAL": "特种",
-    }
+    PROFESSION_NAMES = PrtsImageAssets.PROFESSION_NAMES
+    build_operator_avatar_url = staticmethod(
+        PrtsImageAssets.build_operator_avatar_url
+    )
+    build_elite_icon_url = staticmethod(PrtsImageAssets.build_elite_icon_url)
+    build_rarity_icon_url = staticmethod(PrtsImageAssets.build_rarity_icon_url)
+    build_profession_icon_url = staticmethod(
+        PrtsImageAssets.build_profession_icon_url
+    )
 
     def __init__(self, avatar_cache_dir: str | Path, logger: Any | None = None):
-        """初始化角色总览渲染器和助战头像缓存。"""
+        """初始化角色总览渲染器和助战头像缓存"""
         self.avatar_cache_dir = Path(avatar_cache_dir)
         self.avatar_cache_dir.mkdir(parents=True, exist_ok=True)
         self.logger = logger
-        self._avatar_cache_lock = RLock()
+        self.image_cache = PrtsImageCache(self.avatar_cache_dir, logger=logger)
 
     async def arender(
         self,
@@ -76,7 +68,7 @@ class AccountInfoRenderer:
         return_url: bool = True,
         options: dict | None = None,
     ) -> ReturnResultOfAccountInfo:
-        """解析完整森空岛 data 对象并渲染角色信息总览。"""
+        """解析完整森空岛 data 对象并渲染角色信息总览"""
         try:
             overview = await asyncio.to_thread(self.build_overview, account_data)
         except (TypeError, ValueError, KeyError) as exc:
@@ -110,7 +102,7 @@ class AccountInfoRenderer:
         )
 
     def build_overview(self, account_data: dict) -> AccountOverview:
-        """从完整 data 对象构造与 HTML 模板无关的总览模型。"""
+        """从完整 data 对象构造与 HTML 模板无关的总览模型"""
         if not isinstance(account_data, dict):
             raise TypeError("account_data 必须是对象")
 
@@ -175,7 +167,7 @@ class AccountInfoRenderer:
         )
 
     def build_text_summary(self, overview: AccountOverview) -> str:
-        """构造 T2I 失败时的纯文本兜底。"""
+        """构造 T2I 失败时的纯文本兜底"""
         lines = [
             f"博士：{overview.name}",
             f"UID：{overview.uid}",
@@ -270,34 +262,6 @@ class AccountInfoRenderer:
             module_text         = module_text,
         )
 
-    @staticmethod
-    def build_operator_avatar_url(name: str) -> str:
-        """按 PRTS Wiki 文件存储规则构造干员头像直链。"""
-        filename = f"头像_{name}.png"
-        digest = hashlib.md5(filename.encode("utf-8")).hexdigest()
-        return f"https://media.prts.wiki/{digest[0]}/{digest[:2]}/{quote(filename)}"
-
-    @staticmethod
-    def build_elite_icon_url(elite_phase: int) -> str | None:
-        """构造 PRTS Wiki 精英化阶段图标地址。"""
-        if elite_phase not in {0, 1, 2}:
-            return None
-        return f"https://static.prts.wiki/charinfo/img/ui/elite{elite_phase}.png"
-
-    @staticmethod
-    def build_rarity_icon_url(rarity: int | None) -> str | None:
-        """构造 PRTS Wiki 展示星级图标地址。"""
-        if rarity not in {1, 2, 3, 4, 5, 6}:
-            return None
-        return f"https://static.prts.wiki/charinfo/img/star_{rarity}.png"
-
-    @classmethod
-    def build_profession_icon_url(cls, profession: str) -> str | None:
-        """构造 PRTS Wiki 中文职业图标地址。"""
-        if profession not in cls.PROFESSION_NAMES.values():
-            return None
-        return f"https://static.prts.wiki/charinfo/img/class_{quote(profession)}.png"
-
     def _hydrate_avatar_cache(
         self, assist_chars: tuple[AssistCharInfo, ...]
     ) -> tuple[AssistCharInfo, ...]:
@@ -306,7 +270,11 @@ class AccountInfoRenderer:
         with ThreadPoolExecutor(max_workers=min(3, len(assist_chars))) as executor:
             avatars = tuple(
                 executor.map(
-                    lambda char: self._get_cached_avatar(char.name, char.avatar_url),
+                    lambda char: self.image_cache.get_png(
+                        char.name,
+                        char.avatar_url,
+                        resource_name=f"PRTS 助战头像（operator={char.name!r}）",
+                    ),
                     assist_chars,
                 )
             )
@@ -314,47 +282,6 @@ class AccountInfoRenderer:
             replace(char, avatar_url=avatar)
             for char, avatar in zip(assist_chars, avatars)
         )
-
-    def _avatar_cache_path(self, operator_name: str) -> Path:
-        digest = hashlib.sha256(operator_name.encode("utf-8")).hexdigest()
-        return self.avatar_cache_dir / f"{digest}.png"
-
-    @staticmethod
-    def _avatar_data_url(content: bytes) -> str:
-        encoded = base64.b64encode(content).decode("ascii")
-        return f"data:image/png;base64,{encoded}"
-
-    def _get_cached_avatar(self, operator_name: str, remote_url: str) -> str:
-        cache_path = self._avatar_cache_path(operator_name)
-        try:
-            with self._avatar_cache_lock:
-                if cache_path.is_file():
-                    content = cache_path.read_bytes()
-                    if content.startswith(self.PNG_SIGNATURE):
-                        return self._avatar_data_url(content)
-
-            response = requests.get(remote_url, timeout=self.AVATAR_REQUEST_TIMEOUT)
-            response.raise_for_status()
-            content = response.content
-            content_type = response.headers.get("Content-Type", "").lower()
-            if (
-                not content.startswith(self.PNG_SIGNATURE)
-                or len(content) > self.MAX_AVATAR_SIZE
-                or (content_type and not content_type.startswith("image/"))
-            ):
-                return remote_url
-
-            with self._avatar_cache_lock:
-                temporary_path = cache_path.with_suffix(".tmp")
-                temporary_path.write_bytes(content)
-                temporary_path.replace(cache_path)
-            return self._avatar_data_url(content)
-        except (OSError, requests.RequestException) as exc:
-            self._log(
-                "warning",
-                f"PRTS 助战头像获取失败（operator={operator_name!r}）：{exc}",
-            )
-            return remote_url
 
     def _format_timestamp(self, value: object, field: str) -> str:
         timestamp = self._required_int(value, field)

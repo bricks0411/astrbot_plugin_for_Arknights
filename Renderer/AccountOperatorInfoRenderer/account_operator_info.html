@@ -1,0 +1,441 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+      :root {
+        --page-width: 1120px;
+        --page-padding: 24px;
+        --sheet-width: 1072px;
+        --ink: #172026;
+        --muted: #68747c;
+        --line: #d9dee2;
+        --surface: #ffffff;
+        --canvas: #edf0f2;
+        --accent: #e1ad20;
+        --trust: #168477;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        width: var(--page-width);
+        margin: 0;
+        background: var(--canvas);
+        color: var(--ink);
+      }
+
+      body {
+        padding: var(--page-padding);
+        font-family: "Microsoft YaHei", "Noto Sans SC", sans-serif;
+      }
+
+      .sheet {
+        width: var(--sheet-width);
+        overflow: hidden;
+        border: 1px solid #cfd5d9;
+        border-radius: 8px;
+        background: var(--surface);
+        box-shadow: 0 16px 42px rgba(23, 32, 38, 0.1);
+      }
+
+      .page-header {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        min-height: 154px;
+        padding: 30px 36px 28px;
+        border-bottom: 4px solid var(--accent);
+      }
+
+      .eyebrow {
+        color: var(--muted);
+        font-size: 14px;
+        font-weight: 700;
+        letter-spacing: 0;
+      }
+
+      h1 {
+        margin: 8px 0 0;
+        font-size: 38px;
+        line-height: 1.2;
+        letter-spacing: 0;
+      }
+
+      .doctor {
+        max-width: 380px;
+        text-align: right;
+      }
+
+      .doctor-name {
+        overflow-wrap: anywhere;
+        font-size: 22px;
+        font-weight: 800;
+      }
+
+      .doctor-meta {
+        margin-top: 7px;
+        color: var(--muted);
+        font-family: Consolas, monospace;
+        font-size: 13px;
+      }
+
+      .rarity-group {
+        margin: 24px;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #f6f7f8;
+      }
+
+      .group-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        min-height: 64px;
+        padding: 14px 20px;
+        border-bottom: 1px solid var(--line);
+        background: #242b30;
+        color: #fff;
+      }
+
+      .group-title {
+        margin: 0;
+        font-size: 24px;
+        line-height: 1.25;
+        letter-spacing: 0;
+      }
+
+      .rarity-icon {
+        width: auto;
+        height: 33px;
+        object-fit: contain;
+        filter: drop-shadow(0 2px 3px rgba(23, 32, 38, 0.45));
+      }
+
+      .rarity-text {
+        color: #f0c14b;
+        font-size: 16px;
+        font-weight: 800;
+      }
+
+      .operator-list {
+        display: grid;
+        gap: 10px;
+        padding: 12px;
+      }
+
+      .operator-card {
+        display: grid;
+        grid-template-columns: 42px 118px 190px 248px minmax(0, 1fr);
+        min-height: 136px;
+        overflow: hidden;
+        border: 1px solid #d5dade;
+        border-radius: 7px;
+        background: #fff;
+      }
+
+      .rank {
+        display: grid;
+        place-items: center;
+        border-right: 1px solid #e0e4e7;
+        background: #f0f2f3;
+        color: #5f6a71;
+        font-family: Consolas, monospace;
+        font-size: 17px;
+        font-weight: 800;
+      }
+
+      .portrait {
+        position: relative;
+        display: grid;
+        place-items: center;
+        overflow: hidden;
+        border-right: 1px solid #e0e4e7;
+        background: #e9edef;
+      }
+
+      .avatar {
+        width: 100%;
+        height: 136px;
+        object-fit: cover;
+      }
+
+      .profession-icon {
+        position: absolute;
+        top: 6px;
+        left: 6px;
+        width: 34px;
+        height: 34px;
+        padding: 5px;
+        border: 1px solid rgba(255, 255, 255, 0.88);
+        border-radius: 6px;
+        background: rgba(36, 43, 48, 0.88);
+        object-fit: contain;
+      }
+
+      .identity {
+        min-width: 0;
+        padding: 20px 16px;
+        border-right: 1px solid #e0e4e7;
+      }
+
+      .operator-name {
+        overflow-wrap: anywhere;
+        font-size: 22px;
+        line-height: 1.25;
+        font-weight: 800;
+        letter-spacing: 0;
+      }
+
+      .profession {
+        margin-top: 7px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .mastery-total {
+        margin-top: 16px;
+        color: #9a7110;
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .stats {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        align-content: center;
+        gap: 9px 16px;
+        padding: 15px 18px;
+        border-right: 1px solid #e0e4e7;
+      }
+
+      .stat {
+        min-width: 0;
+      }
+
+      .stat-label {
+        color: #879198;
+        font-size: 11px;
+      }
+
+      .stat-value {
+        display: flex;
+        align-items: center;
+        min-height: 28px;
+        margin-top: 2px;
+        font-size: 17px;
+        font-weight: 800;
+      }
+
+      .elite-icon {
+        width: 25px;
+        height: 25px;
+        margin-right: 6px;
+        object-fit: contain;
+      }
+
+      .trust-value {
+        color: var(--trust);
+      }
+
+      .skills {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        min-width: 0;
+        padding: 14px 16px;
+      }
+
+      .skill {
+        width: 70px;
+        min-width: 70px;
+        text-align: center;
+      }
+
+      .skill-icon-wrap {
+        position: relative;
+        width: 54px;
+        height: 54px;
+        margin: 0 auto;
+      }
+
+      .skill-icon {
+        width: 54px;
+        height: 54px;
+        border: 1px solid #ced4d8;
+        border-radius: 7px;
+        background: #2d3439;
+        object-fit: cover;
+      }
+
+      .skill-index {
+        position: absolute;
+        top: -5px;
+        left: -5px;
+        min-width: 20px;
+        height: 20px;
+        padding: 0 4px;
+        border-radius: 5px;
+        background: #242b30;
+        color: #fff;
+        font-family: Consolas, monospace;
+        font-size: 11px;
+        font-weight: 800;
+        line-height: 20px;
+      }
+
+      .skill-level {
+        margin-top: 6px;
+        color: #566168;
+        font-size: 11px;
+        white-space: nowrap;
+      }
+
+      .specialize {
+        color: #a37200;
+        font-weight: 800;
+      }
+
+      .no-skills,
+      .empty-group {
+        display: grid;
+        place-items: center;
+        color: #8a949a;
+        font-size: 14px;
+      }
+
+      .empty-group {
+        min-height: 100px;
+      }
+
+      .page-footer {
+        padding: 2px 28px 24px;
+        color: #7c878e;
+        text-align: center;
+        font-size: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="sheet">
+      <header class="page-header">
+        <div>
+          <div class="eyebrow">ARKNIGHTS · OPERATOR DEVELOPMENT</div>
+          <h1>干员练度排行</h1>
+        </div>
+        <div class="doctor">
+          <div class="doctor-name">{{ name }}</div>
+          <div class="doctor-meta">UID {{ uid }} · 数据截至 {{ data_date }}</div>
+        </div>
+      </header>
+
+      {% for group in groups %}
+        <section class="rarity-group">
+          <header class="group-header">
+            <h2 class="group-title">{{ group.title }}</h2>
+            {% if group.rarity_icon_url %}
+              <img
+                class="rarity-icon"
+                src="{{ group.rarity_icon_url }}"
+                alt="{{ group.rarity }} 星"
+              >
+            {% else %}
+              <span class="rarity-text">{{ group.rarity }} 星</span>
+            {% endif %}
+          </header>
+
+          {% if group.operators %}
+            <div class="operator-list">
+              {% for operator in group.operators %}
+                <article class="operator-card">
+                  <div class="rank">{{ loop.index }}</div>
+
+                  <div class="portrait">
+                    <img class="avatar" src="{{ operator.avatar_url }}" alt="{{ operator.name }}头像">
+                    {% if operator.profession_icon_url %}
+                      <img
+                        class="profession-icon"
+                        src="{{ operator.profession_icon_url }}"
+                        alt="{{ operator.profession }}"
+                      >
+                    {% endif %}
+                  </div>
+
+                  <div class="identity">
+                    <div class="operator-name">{{ operator.name }}</div>
+                    <div class="profession">{{ operator.profession }}</div>
+                    <div class="mastery-total">
+                      专精合计 {{ operator.specialize_total }}
+                    </div>
+                  </div>
+
+                  <div class="stats">
+                    <div class="stat">
+                      <div class="stat-label">等级</div>
+                      <div class="stat-value">{{ operator.level_text }}</div>
+                    </div>
+                    <div class="stat">
+                      <div class="stat-label">精英化</div>
+                      <div class="stat-value">
+                        {% if operator.elite_icon_url %}
+                          <img
+                            class="elite-icon"
+                            src="{{ operator.elite_icon_url }}"
+                            alt="精英 {{ operator.evolve_phase }}"
+                          >
+                        {% endif %}
+                        精英 {{ operator.evolve_phase }}
+                      </div>
+                    </div>
+                    <div class="stat">
+                      <div class="stat-label">潜能</div>
+                      <div class="stat-value">{{ operator.potential_text }}</div>
+                    </div>
+                    <div class="stat">
+                      <div class="stat-label">信赖</div>
+                      <div class="stat-value trust-value">{{ operator.favor_text }}</div>
+                    </div>
+                  </div>
+
+                  {% if operator.skills %}
+                    <div class="skills">
+                      {% for skill in operator.skills %}
+                        <div class="skill">
+                          <div class="skill-icon-wrap">
+                            <img
+                              class="skill-icon"
+                              src="{{ skill.icon_url }}"
+                              alt="技能 {{ skill.sequence }}"
+                            >
+                            <span class="skill-index">S{{ skill.sequence }}</span>
+                          </div>
+                          <div class="skill-level">
+                            {{ skill.level_text }}
+                            {% if skill.specialize_text %}
+                              · <span class="specialize">{{ skill.specialize_text }}</span>
+                            {% endif %}
+                          </div>
+                        </div>
+                      {% endfor %}
+                    </div>
+                  {% else %}
+                    <div class="no-skills">无战斗技能</div>
+                  {% endif %}
+                </article>
+              {% endfor %}
+            </div>
+          {% else %}
+            <div class="empty-group">暂无该星级干员</div>
+          {% endif %}
+        </section>
+      {% endfor %}
+
+      <footer class="page-footer">数据来自森空岛 API，可能有一定延迟 · 非官方公开接口，不保证服务稳定性</footer>
+    </main>
+  </body>
+</html>

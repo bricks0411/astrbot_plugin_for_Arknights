@@ -3,6 +3,13 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+try:
+    import astrbot  # noqa: F401
+except ModuleNotFoundError:
+    from ._astrbot_stub import install
+
+    install()
+
 from ..GetAccountInfo.model import RequestResultOfAccountInfo
 from ..GetDoctorInfo.models import RequestResultOfDoctorInfo
 from ..LoginTools.models import (
@@ -487,6 +494,51 @@ class MainCommandRegressionTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(results, [("image", "https://example.test/account.png")])
         checker.account_info_renderer.arender.assert_awaited_once_with(
+            checker,
+            account_data,
+        )
+
+    async def test_operator_query_passes_complete_json_to_renderer(self):
+        checker = object.__new__(ArknightsChecker)
+        account_data = {
+            "currentTs": 1704240000,
+            "status": {"uid": "game-uid", "name": "Doctor"},
+            "chars": [],
+            "charInfoMap": {},
+        }
+        checker.data_storage_handler = SimpleNamespace(
+            aget_user_token=AsyncMock(
+                return_value=SimpleNamespace(
+                    status=True,
+                    account_id="game-uid",
+                )
+            ),
+            aget_account_data=AsyncMock(
+                return_value=SimpleNamespace(
+                    status=True,
+                    account_data=account_data,
+                )
+            ),
+        )
+        checker.account_operator_info_renderer = SimpleNamespace(
+            arender=AsyncMock(
+                return_value=SimpleNamespace(
+                    status=True,
+                    image_url="https://example.test/operators.png",
+                )
+            )
+        )
+
+        results = await _collect(checker.GetAccountOperationInfo(_Event()))
+
+        self.assertEqual(
+            results,
+            [
+                "由于数据量过大，渲染服务可能不稳定。若渲染失败，请等待一段时间后重试",
+                ("image", "https://example.test/operators.png"),
+            ],
+        )
+        checker.account_operator_info_renderer.arender.assert_awaited_once_with(
             checker,
             account_data,
         )
