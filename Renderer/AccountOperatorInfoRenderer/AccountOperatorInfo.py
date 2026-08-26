@@ -97,7 +97,7 @@ class AccountOperatorInfoRenderer:
             self._log_exception("干员练度图片渲染失败", exc)
             return ReturnResultOfAccountOperatorInfo(
                 status		= False,
-                message		= "干员练度图片渲染失败",
+                message		= exc,
                 overview	= overview,
             )
 
