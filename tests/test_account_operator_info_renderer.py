@@ -284,7 +284,7 @@ class AccountOperatorInfoRendererTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result.status)
         self.assertEqual(result.image_url, "https://example.test/operators.png")
         template, data = html_renderer.html_render.await_args.args
-        self.assertIn("干员练度排行", template)
+        self.assertIn("干员练度总览", template)
         self.assertEqual(data["groups"][0]["operators"][0]["char_id"], "six")
         self.assertEqual(
             html_renderer.html_render.await_args.kwargs["options"],

@@ -262,12 +262,13 @@ class AccountOperatorInfoRenderer:
         field_prefix: str,
         index: int,
     ) -> AccountOperatorSkillInfo:
-
+        """解析技能字段"""
         if not isinstance(value, dict):
             raise TypeError(f"{field_prefix}.skills[{index}] 必须是对象")
         skill_id = self._required_text(
             value.get("id"), f"{field_prefix}.skills[{index}].id"
         )
+        # 技能专精等级
         specialize_level = self._required_int(
             value.get("specializeLevel"),
             f"{field_prefix}.skills[{index}].specializeLevel",
@@ -314,8 +315,8 @@ class AccountOperatorInfoRenderer:
             return groups
         # 启动最多 8 个线程并发下载干员头像
         # 你可能会问，为什么不复用 TCP 连接呢？
-        # 其实没必要！！在同一台机子上长期跑的这个项目，会优先使用缓存中的图片数据，这也就代表，每个干员的头像最多会被请求一次
-        # 时间越长，这一坨发送 HTTP 请求就会越低，直到所有 4 ~ 6 星干员的头像被全部缓存
+        # 其实没必要。在同一台机子上长期跑的这个项目，会优先使用缓存中的图片数据，这也就代表，每个干员的头像最多会被请求一次
+        # 时间越长，这一坨发送 HTTP 请求的频率就会越低，直到所有 3 ~ 6 星干员的头像被全部缓存
         with ThreadPoolExecutor(max_workers=min(8, len(operators))) as executor:
             avatars = tuple(
                 executor.map(
