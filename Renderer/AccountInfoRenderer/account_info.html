@@ -62,8 +62,29 @@
     }
 
     .identity {
+      display: flex;
+      align-items: center;
+      gap: 22px;
+      min-width: 0;
       flex: 1;
-      padding: 38px 44px 34px;
+      padding: 32px 28px 32px 32px;
+    }
+
+    .profile-avatar {
+      flex: 0 0 112px;
+      width: 112px;
+      height: 112px;
+      overflow: hidden;
+      border: 1px solid #d8dde1;
+      border-radius: 12px;
+      background: #e8ecee;
+      object-fit: cover;
+      box-shadow: 0 6px 16px rgba(23, 32, 38, 0.12);
+    }
+
+    .identity-copy {
+      min-width: 0;
+      flex: 1;
     }
 
     .eyebrow {
@@ -75,7 +96,7 @@
 
     h1 {
       margin: 10px 0 8px;
-      font-size: 50px;
+      font-size: 46px;
       line-height: 1.12;
       font-weight: 800;
       letter-spacing: 0;
@@ -312,10 +333,15 @@
   <main class="sheet">
     <header class="header">
       <div class="identity">
-        <div class="eyebrow">RHODES ISLAND · DOCTOR PROFILE</div>
-        <h1>{{ name }}</h1>
-        <div class="uid">UID {{ uid }}</div>
-        <div class="data-date">数据截至 {{ data_date }}</div>
+        {% if avatar_url %}
+        <img class="profile-avatar" src="{{ avatar_url }}" alt="{{ name }}头像">
+        {% endif %}
+        <div class="identity-copy">
+          <div class="eyebrow">RHODES ISLAND · DOCTOR PROFILE</div>
+          <h1>{{ name }}</h1>
+          <div class="uid">UID {{ uid }}</div>
+          <div class="data-date">数据截至 {{ data_date }}</div>
+        </div>
       </div>
       <div class="level-area">
         <div

@@ -34,6 +34,7 @@ class AccountOverview:
     ap_text: str
     data_date: str
     assist_chars: tuple[AssistCharInfo, ...]
+    avatar_url: str = ""
 
     def to_dict(self) -> dict:
         return asdict(self)

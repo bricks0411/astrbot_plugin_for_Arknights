@@ -17,6 +17,9 @@ def _account_data() -> dict:
             "name": "测试博士#1234",
             "level": 74,
             "mainStageProgress": "main_17-12",
+            "avatar": {
+                "url": "https://example.test/doctor-avatar.png",
+            },
             "registerTs": 1704067200,
             "lastOnlineTs": 1704153600,
             "ap": {"current": 32, "max": 202},
@@ -77,6 +80,7 @@ class AccountInfoRendererTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(overview.last_online_date, "2024-01-02")
         self.assertEqual(overview.data_date, "2024-01-03")
         self.assertEqual(overview.ap_text, "32 / 202")
+        self.assertEqual(overview.avatar_url, "https://example.test/doctor-avatar.png")
 
         assist = overview.assist_chars[0]
         self.assertEqual(assist.name, "拉普兰德")
@@ -140,6 +144,19 @@ class AccountInfoRendererTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(overview.level_progress_percent, 100.0)
 
+    def test_direct_status_url_takes_priority_over_nested_avatar_url(self):
+        account_data = _account_data()
+        account_data["status"]["url"] = "https://example.test/direct-avatar.png"
+
+        with patch.object(
+            self.renderer,
+            "_hydrate_avatar_cache",
+            side_effect=lambda assists: assists,
+        ):
+            overview = self.renderer.build_overview(account_data)
+
+        self.assertEqual(overview.avatar_url, "https://example.test/direct-avatar.png")
+
     async def test_arender_passes_complete_render_data_to_astrbot(self):
         html_renderer = AsyncMock()
         html_renderer.html_render.return_value = "https://example.test/account.png"
@@ -162,6 +179,8 @@ class AccountInfoRendererTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("--assist-card-width: 250px", template)
         self.assertIn("width: var(--page-width)", template)
         self.assertEqual(data["assist_chars"][0]["name"], "拉普兰德")
+        self.assertEqual(data["avatar_url"], "https://example.test/doctor-avatar.png")
+        self.assertIn("profile-avatar", template)
         self.assertEqual(
             html_renderer.html_render.await_args.kwargs["options"],
             ACCOUNT_INFO_RENDER_OPTIONS,

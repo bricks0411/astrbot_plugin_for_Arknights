@@ -112,6 +112,11 @@ class AccountInfoRenderer:
         char_info_map = self._optional_dict(account_data.get("charInfoMap"))
         stage_info_map = self._optional_dict(account_data.get("stageInfoMap"))
 
+        avatar_url = self._text_or_default(status.get("url"), "")
+        if not avatar_url:
+            avatar = self._optional_dict(status.get("avatar"))
+            avatar_url = self._text_or_default(avatar.get("url"), "")
+
         stage_id = self._required_text(
             status.get("mainStageProgress"), "status.mainStageProgress"
         )
@@ -160,6 +165,7 @@ class AccountInfoRenderer:
                 account_data.get("currentTs"), "currentTs"
             ),
             assist_chars=assist_chars,
+            avatar_url=avatar_url,
         )
         return replace(
             overview,
