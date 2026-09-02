@@ -132,6 +132,17 @@ class AccountInfoRendererTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(overview.stage_text, "main_17-12 / 名称未知")
         self.assertEqual(overview.assist_chars, ())
 
+    def test_empty_main_stage_progress_means_all_stages_completed(self):
+        account_data = _account_data()
+        account_data["status"]["mainStageProgress"] = ""
+        account_data["stageInfoMap"] = {}
+        account_data["assistChars"] = []
+
+        overview = self.renderer.build_overview(account_data)
+
+        self.assertEqual(overview.stage_text, "END / 全部完成")
+        self.assertEqual(overview.assist_chars, ())
+
     def test_max_level_uses_complete_experience_ring(self):
         account_data = _account_data()
         account_data["status"]["exp"] = {"current": 0, "max": 0}

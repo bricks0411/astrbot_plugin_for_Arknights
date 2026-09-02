@@ -117,12 +117,24 @@ class AccountInfoRenderer:
             avatar = self._optional_dict(status.get("avatar"))
             avatar_url = self._text_or_default(avatar.get("url"), "")
 
-        stage_id = self._required_text(
-            status.get("mainStageProgress"), "status.mainStageProgress"
-        )
-        stage_info = self._optional_dict(stage_info_map.get(stage_id))
-        stage_code = self._text_or_default(stage_info.get("code"), stage_id)
-        stage_name = self._text_or_default(stage_info.get("name"), "名称未知")
+        stage_id = status.get("mainStageProgress")
+        if not isinstance(stage_id, str):
+            raise ValueError("mainStageProgress 必须是字符串")
+
+        stage_code, stage_name = "", ""
+        stage_info = {}
+
+        # 对于已经打完主线的老东西，json 的主线进度字段是空字符串
+        # 为了防止抛异常，这里用 END 兜个底
+        # 修改于 2026 / 09 / 02
+        if stage_id == "":
+            stage_id = "END"
+            stage_code = "END"
+            stage_name = "全部完成"
+        else:
+            stage_info = self._optional_dict(stage_info_map.get(stage_id))
+            stage_code = self._text_or_default(stage_info.get("code"), stage_id)
+            stage_name = self._text_or_default(stage_info.get("name"), "名称未知")
 
         assist_values = account_data.get("assistChars")
         if assist_values is None:
